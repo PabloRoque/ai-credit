@@ -255,6 +255,58 @@ Here's a detailed breakdown of the parsing method for each supported tool:
 
 In essence, `ai-contrib` features a specialized scanner for each supported AI tool. Each scanner is programmed to know its corresponding tool's log storage location and data structure. During analysis, the main program invokes all available scanners, collects all `FileChange` events related to the target project, and then aggregates, deduplicates, and analyzes these events to generate the final contribution report.
 
+## Contribution Statistics Methodology
+
+### Core Principle: Verified Existence
+
+The tool applies a strict verification rule when calculating AI contribution statistics:
+
+> **Only lines that currently exist in the codebase with exactly the same content are counted as AI contributions.**
+
+### How It Works
+
+1. **Parse AI Session Logs**: The scanner reads session files from each AI tool and extracts file change events (writes, edits, patches).
+
+2. **Extract Changed Content**: For each file change, the tool captures:
+   - The file path
+   - Lines added (new content)
+   - Lines removed (old content)
+
+3. **Verify Against Current Codebase**: Before counting any line as an AI contribution, the tool:
+   - Reads the current content of the target file from the repository
+   - For each line that AI claims to have added, checks if an **identical line** exists in the current file
+   - Only lines that match exactly (character-for-character) are counted
+
+4. **Calculate Statistics**: The verified lines are then aggregated into:
+   - Per-file contribution counts
+   - Per-tool contribution totals
+   - Overall repository contribution ratios
+
+### Example
+
+If an AI tool's log shows it added these lines to `src/utils.py`:
+
+```python
+def helper():
+    return True
+```
+
+But the current `src/utils.py` in the repository contains:
+
+```python
+def helper():
+    return False  # Changed from True
+```
+
+Then the line `return True` will **NOT** be counted as an AI contribution because it no longer exists in the codebase. Only if the line matches exactly will it be included in the statistics.
+
+### Why This Approach?
+
+This methodology ensures that:
+- Statistics reflect **actual, surviving** AI contributions
+- Code that was later modified or removed by humans (or other AI tools) is not attributed to the original AI
+- Contribution ratios are accurate and meaningful for understanding the current state of the codebase
+
 ## Limitations
 
 - Only tracks AI contributions that are recorded in local session files
