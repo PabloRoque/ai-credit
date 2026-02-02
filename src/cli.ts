@@ -1,13 +1,111 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
-import ora from 'ora';
+import { Worker, isMainThread, parentPort, workerData } from 'worker_threads';
+import { fileURLToPath } from 'url';
 import chalk from 'chalk';
 import * as path from 'path';
 import * as fs from 'fs';
 import { ContributionAnalyzer } from './analyzer.js';
 import { ConsoleReporter, JsonReporter, MarkdownReporter } from './reporter.js';
 import { AITool, OutputFormat } from './types.js';
+
+// Worker thread: run analysis off the main thread so ora can animate
+if (!isMainThread) {
+  const { projectPath, tools } = workerData;
+  const analyzer = new ContributionAnalyzer(projectPath);
+  const stats = analyzer.analyze(tools);
+  // ContributionStats contains Maps which can't be transferred directly
+  // Serialize to JSON-safe format
+  parentPort!.postMessage(JSON.stringify(stats, (_key, value) => {
+    if (value instanceof Map) return { __type: 'Map', entries: Array.from(value.entries()) };
+    return value;
+  }));
+  process.exit(0);
+}
+
+/**
+ * Run analyzer in a worker thread to keep the main thread free for spinner animation
+ */
+function analyzeInWorker(projectPath: string, tools?: AITool[]): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(fileURLToPath(import.meta.url), {
+      workerData: { projectPath, tools },
+    });
+    worker.on('message', (msg: string) => {
+      const parsed = JSON.parse(msg, (_key, value) => {
+        if (value && value.__type === 'Map') return new Map(value.entries);
+        return value;
+      });
+      // Restore Date objects from ISO strings
+      if (parsed.scanTime) parsed.scanTime = new Date(parsed.scanTime);
+      if (parsed.sessions) {
+        for (const s of parsed.sessions) {
+          if (s.timestamp) s.timestamp = new Date(s.timestamp);
+          if (s.changes) for (const c of s.changes) { if (c.timestamp) c.timestamp = new Date(c.timestamp); }
+        }
+      }
+      resolve(parsed);
+    });
+    worker.on('error', reject);
+    worker.on('exit', (code) => {
+      if (code !== 0) reject(new Error(`Worker exited with code ${code}`));
+    });
+  });
+}
+
+/**
+ * Rainbow text animation (same algorithm as chalk-animation)
+ * Each character gets a hue from a full rainbow spread across the string,
+ * shifting by 5 degrees per frame for smooth flow.
+ */
+function rainbowText(str: string, frame: number): string {
+  const len = str.length;
+  if (len === 0) return str;
+  let result = '';
+  for (let i = 0; i < len; i++) {
+    if (str[i] === ' ') { result += ' '; continue; }
+    const hue = ((i / len) * 360 - frame * 5 % 360 + 360) % 360;
+    const [r, g, b] = hsvToRgb(hue, 1, 1);
+    result += chalk.rgb(r, g, b)(str[i]);
+  }
+  return result;
+}
+
+function hsvToRgb(h: number, s: number, v: number): [number, number, number] {
+  const c = v * s;
+  const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+  const m = v - c;
+  let r = 0, g = 0, b = 0;
+  if (h < 60) { r = c; g = x; }
+  else if (h < 120) { r = x; g = c; }
+  else if (h < 180) { g = c; b = x; }
+  else if (h < 240) { g = x; b = c; }
+  else if (h < 300) { r = x; b = c; }
+  else { r = c; b = x; }
+  return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
+}
+
+function startRainbowLoading(text: string) {
+  let frame = 0;
+  process.stderr.write('\u001B[?25l'); // hide cursor
+  const interval = setInterval(() => {
+    process.stderr.write(`\r${rainbowText(text, frame)}`);
+    frame++;
+  }, 15);
+  return {
+    stop() {
+      clearInterval(interval);
+      process.stderr.write(`\r${' '.repeat(text.length)}\r`);
+      process.stderr.write('\u001B[?25h'); // show cursor
+    },
+    fail(msg: string) {
+      clearInterval(interval);
+      process.stderr.write(`\r${chalk.red('✖')} ${msg}\n`);
+      process.stderr.write('\u001B[?25h');
+    },
+  };
+}
 
 const TOOL_MAP: Record<string, AITool> = {
   claude: AITool.CLAUDE_CODE,
@@ -65,12 +163,11 @@ program
       process.exit(1);
     }
 
-    const spinner = ora('Analyzing repository...').start();
+    const spinner = startRainbowLoading('Analyzing repository...');
 
     try {
-      const analyzer = new ContributionAnalyzer(resolvedPath);
       const tools = parseTools(options.tools);
-      const stats = analyzer.analyze(tools);
+      const stats = await analyzeInWorker(resolvedPath, tools);
 
       spinner.stop();
 
@@ -79,7 +176,7 @@ program
       if (format === 'console') {
         const reporter = new ConsoleReporter();
         reporter.printSummary(stats);
-        
+
         if (options.verbose) {
           reporter.printFiles(stats);
           reporter.printTimeline(stats);
@@ -139,11 +236,10 @@ program
   .option('-n, --limit <number>', 'Number of files to show', '20')
   .action(async (repoPath: string = '.', options) => {
     const resolvedPath = path.resolve(repoPath);
-    const spinner = ora('Analyzing files...').start();
+    const spinner = startRainbowLoading('Analyzing files...');
 
     try {
-      const analyzer = new ContributionAnalyzer(resolvedPath);
-      const stats = analyzer.analyze();
+      const stats = await analyzeInWorker(resolvedPath);
       spinner.stop();
 
       const reporter = new ConsoleReporter();
@@ -162,11 +258,10 @@ program
   .option('-n, --limit <number>', 'Number of entries to show', '20')
   .action(async (repoPath: string = '.', options) => {
     const resolvedPath = path.resolve(repoPath);
-    const spinner = ora('Loading history...').start();
+    const spinner = startRainbowLoading('Loading history...');
 
     try {
-      const analyzer = new ContributionAnalyzer(resolvedPath);
-      const stats = analyzer.analyze();
+      const stats = await analyzeInWorker(resolvedPath);
       spinner.stop();
 
       const reporter = new ConsoleReporter();
@@ -248,12 +343,11 @@ program
       process.exit(1);
     }
 
-    const spinner = ora('Analyzing repository...').start();
+    const spinner = startRainbowLoading('Analyzing repository...');
 
     try {
-      const analyzer = new ContributionAnalyzer(resolvedPath);
       const tools = parseTools(options.tools);
-      const stats = analyzer.analyze(tools);
+      const stats = await analyzeInWorker(resolvedPath, tools);
 
       spinner.stop();
 
@@ -262,7 +356,7 @@ program
       if (format === 'console') {
         const reporter = new ConsoleReporter();
         reporter.printSummary(stats);
-        
+
         if (options.verbose) {
           reporter.printFiles(stats);
           reporter.printTimeline(stats);
