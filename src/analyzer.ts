@@ -14,7 +14,6 @@ import {
   ClaudeScanner,
   CodexScanner,
   GeminiScanner,
-  AiderScanner,
   OpencodeScanner,
 } from './scanners/index.js';
 
@@ -37,7 +36,6 @@ export class ContributionAnalyzer {
       new ClaudeScanner(),
       new CodexScanner(),
       new GeminiScanner(),
-      new AiderScanner(),
       new OpencodeScanner(),
     ];
   }
@@ -51,14 +49,6 @@ export class ContributionAnalyzer {
     for (const scanner of this.scanners) {
       if (scanner.isAvailable()) {
         available.push(scanner.tool);
-      }
-    }
-
-    // Special check for Aider (project-local)
-    const aiderScanner = this.scanners.find(s => s.tool === AITool.AIDER) as AiderScanner;
-    if (aiderScanner?.isAvailableForProject(this.projectPath)) {
-      if (!available.includes(AITool.AIDER)) {
-        available.push(AITool.AIDER);
       }
     }
 

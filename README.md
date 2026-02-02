@@ -3,7 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/ai-credit.svg)](https://www.npmjs.com/package/ai-credit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A command-line tool to track and analyze AI coding assistants' contributions in your codebase. Supports **Claude Code**, **Codex CLI**, **Gemini CLI**, and **Aider**.
+A command-line tool to track and analyze AI coding assistants' contributions in your codebase. Supports **Claude Code**, **Codex CLI**, **Gemini CLI**, and **Opencode**.
 
 ## Quick Start
 
@@ -20,7 +20,7 @@ ai-credit
 
 - 🔍 **Auto-detection**: Automatically finds AI tool session data on your system
 - 📊 **Detailed Statistics**: Lines of code, files modified, contribution ratios
-- 🤖 **Multi-tool Support**: Claude Code, Codex CLI, Gemini CLI, Aider
+- 🤖 **Multi-tool Support**: Claude Code, Codex CLI, Gemini CLI, Opencode
 - 📈 **Visual Reports**: Console, JSON, and Markdown output formats
 - 📅 **Timeline View**: Track AI contributions over time
 - 📁 **File-level Analysis**: See which files have the most AI contributions
@@ -54,7 +54,7 @@ npx ai-credit [path]
 # Options:
 #   -f, --format    Output format (console/json/markdown)
 #   -o, --output    Output file path
-#   -t, --tools     AI tools to analyze (claude,codex,gemini,aider,all)
+#   -t, --tools     AI tools to analyze (claude,codex,gemini,opencode,all)
 #   -v, --verbose   Show detailed output
 ```
 
@@ -72,7 +72,6 @@ Shows which AI tools have data available on your system:
   Claude Code     ~/.claude/projects/              ✓ Available
   Codex CLI       ~/.codex/sessions/               ✓ Available
   Gemini CLI      ~/.gemini/tmp/                   ✗ Not found
-  Aider           .aider.chat.history.md           ✗ Not found
 ```
 
 ### File-level Analysis
@@ -123,14 +122,14 @@ Lists all AI sessions for the repository.
 ┡━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━╇━━━━━━━━━━━━━┩
 │ Claude Code  │ 15       │ 30    │ +2500       │
 │ Codex CLI    │ 10       │ 20    │ +1000       │
-│ Aider        │ 3        │ 5     │ +250        │
+│ Opencode     │ 3        │ 5     │ +250        │
 └──────────────┴──────────┴───────┴─────────────┘
 
 📈 Contribution Distribution
 
   Claude Code  ████████████████████████████░░░░░░░░░░░░░░░░░░░░░░ 66.7%
   Codex CLI    ████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 26.7%
-  Aider        ███░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  6.7%
+  Opencode     ███░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  6.7%
 ```
 
 ## Supported AI Tools
@@ -140,7 +139,7 @@ Lists all AI sessions for the repository.
 | Claude Code | `~/.claude/projects/<path>/` | JSONL |
 | Codex CLI | `~/.codex/sessions/YYYY/MM/DD/` | JSONL |
 | Gemini CLI | `~/.gemini/tmp/<hash>/chats/` | JSON |
-| Aider | `.aider.chat.history.md` | Markdown |
+| Opencode | `~/.local/share/opencode/` | JSON |
 
 ## How It Works: The JSON Parsing Logic
 

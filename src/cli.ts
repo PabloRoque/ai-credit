@@ -111,7 +111,6 @@ const TOOL_MAP: Record<string, AITool> = {
   claude: AITool.CLAUDE_CODE,
   codex: AITool.CODEX,
   gemini: AITool.GEMINI,
-  aider: AITool.AIDER,
   opencode: AITool.OPENCODE,
 };
 
@@ -119,7 +118,6 @@ const TOOL_INFO: Record<AITool, { name: string; path: string }> = {
   [AITool.CLAUDE_CODE]: { name: 'Claude Code', path: '~/.claude/projects/' },
   [AITool.CODEX]: { name: 'Codex CLI', path: '~/.codex/sessions/' },
   [AITool.GEMINI]: { name: 'Gemini CLI', path: '~/.gemini/tmp/' },
-  [AITool.AIDER]: { name: 'Aider', path: '.aider.chat.history.md' },
   [AITool.OPENCODE]: { name: 'Opencode', path: '~/.local/share/opencode/' },
 };
 
@@ -155,7 +153,7 @@ program
   .description('Scan repository for AI contributions')
   .option('-f, --format <format>', 'Output format (console, json, markdown)', 'console')
   .option('-o, --output <file>', 'Output file path (for json/markdown formats)')
-  .option('-t, --tools <tools>', 'AI tools to analyze (claude,codex,gemini,aider or all)', 'all')
+  .option('-t, --tools <tools>', 'AI tools to analyze (claude,codex,gemini,opencode or all)', 'all')
   .option('-v, --verbose', 'Show detailed output including files and timeline')
   .action(async (repoPath: string = '.', options) => {
     const resolvedPath = path.resolve(repoPath);
@@ -300,7 +298,6 @@ program
       [AITool.CLAUDE_CODE]: chalk.hex('#D97757'),
       [AITool.CODEX]: chalk.hex('#00A67E'),
       [AITool.GEMINI]: chalk.hex('#4796E3'),
-      [AITool.AIDER]: chalk.hex('#D93B3B'),
       [AITool.OPENCODE]: chalk.yellow,
     };
 

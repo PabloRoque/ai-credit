@@ -10,7 +10,6 @@ const TOOL_NAMES: Record<AITool, string> = {
   [AITool.CLAUDE_CODE]: 'Claude Code',
   [AITool.CODEX]: 'Codex CLI',
   [AITool.GEMINI]: 'Gemini CLI',
-  [AITool.AIDER]: 'Aider',
   [AITool.OPENCODE]: 'Opencode',
 };
 
@@ -21,7 +20,6 @@ const TOOL_COLORS: Record<AITool, typeof chalk> = {
   [AITool.CLAUDE_CODE]: chalk.hex('#D97757'),
   [AITool.CODEX]: chalk.hex('#00A67E'),
   [AITool.GEMINI]: chalk.hex('#4796E3'),
-  [AITool.AIDER]: chalk.hex('#D93B3B'),
   [AITool.OPENCODE]: chalk.yellow,
 };
 

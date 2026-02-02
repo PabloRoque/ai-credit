@@ -5,7 +5,6 @@ export enum AITool {
   CLAUDE_CODE = 'claude',
   CODEX = 'codex',
   GEMINI = 'gemini',
-  AIDER = 'aider',
   OPENCODE = 'opencode',
 }
 
