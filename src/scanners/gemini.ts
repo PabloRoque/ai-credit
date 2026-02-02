@@ -249,19 +249,23 @@ export class GeminiScanner extends BaseScanner {
     // Normalize path
     filePath = this.normalizePath(filePath, projectPath);
 
-    let changeType: 'create' | 'modify' | 'delete' = 'modify';
+    const changeType = (!oldContent && newContent) ? 'create' 
+      : (oldContent && !newContent) ? 'delete' 
+      : 'modify';
+
+    // Calculate diff stats
     let linesAdded = 0;
     let linesRemoved = 0;
 
     if (writeOps.includes(funcName)) {
-      changeType = 'create';
       linesAdded = this.countLines(newContent);
+      linesRemoved = this.countLines(oldContent); // Usually 0 for write, unless overwriting
     } else if (editOps.includes(funcName)) {
-      changeType = 'modify';
-      linesAdded = this.countLines(newContent);
-      linesRemoved = this.countLines(oldContent);
+      // Use LCS for edits to be accurate
+      const stats = this.calculateDiffStats(oldContent, newContent);
+      linesAdded = stats.added;
+      linesRemoved = stats.removed;
     } else {
-      // Unknown function, try to extract what we can
       if (newContent) {
         linesAdded = this.countLines(newContent);
       }
@@ -273,11 +277,78 @@ export class GeminiScanner extends BaseScanner {
       filePath,
       linesAdded,
       linesRemoved,
-      changeType,
+      changeType: writeOps.includes(funcName) && !oldContent ? 'create' : 'modify',
       timestamp: timestamp || new Date(),
       tool: this.tool,
       content: newContent,
       model,
     };
+  }
+
+  /**
+   * Calculate lines added and removed using simple diff (LCS)
+   */
+  private calculateDiffStats(before: string, after: string): { added: number, removed: number } {
+    if (!before) return { added: this.countLines(after), removed: 0 };
+    if (!after) return { added: 0, removed: this.countLines(before) };
+
+    const beforeLines = before.split(/\r?\n/);
+    const afterLines = after.split(/\r?\n/);
+    
+    // Optimization: trim matching start
+    let start = 0;
+    while (start < beforeLines.length && start < afterLines.length && beforeLines[start] === afterLines[start]) {
+      start++;
+    }
+    
+    // Optimization: trim matching end
+    let endBefore = beforeLines.length - 1;
+    let endAfter = afterLines.length - 1;
+    
+    while (endBefore >= start && endAfter >= start && beforeLines[endBefore] === afterLines[endAfter]) {
+      endBefore--;
+      endAfter--;
+    }
+    
+    const remainingBefore = beforeLines.slice(start, endBefore + 1);
+    const remainingAfter = afterLines.slice(start, endAfter + 1);
+    
+    // If nothing remaining, no changes
+    if (remainingBefore.length === 0 && remainingAfter.length === 0) {
+      return { added: 0, removed: 0 };
+    }
+
+    // Calculate LCS on the remaining parts
+    const lcs = this.computeLCS(remainingBefore, remainingAfter);
+    
+    return {
+      added: remainingAfter.length - lcs,
+      removed: remainingBefore.length - lcs
+    };
+  }
+
+  private computeLCS(lines1: string[], lines2: string[]): number {
+    const m = lines1.length;
+    const n = lines2.length;
+    
+    // Use two rows for O(min(M,N)) space
+    let prev = new Array(n + 1).fill(0);
+    let curr = new Array(n + 1).fill(0);
+    
+    for (let i = 1; i <= m; i++) {
+      for (let j = 1; j <= n; j++) {
+        if (lines1[i - 1] === lines2[j - 1]) {
+          curr[j] = prev[j - 1] + 1;
+        } else {
+          curr[j] = Math.max(prev[j], curr[j - 1]);
+        }
+      }
+      // Swap references
+      const temp = prev;
+      prev = curr;
+      curr = temp;
+    }
+    
+    return prev[n];
   }
 }
