@@ -123,29 +123,90 @@ export class ConsoleReporter {
   }
 
   /**
-   * Print distribution bar chart
+   * Print distribution pie chart showing all code proportions
    */
   private printDistributionBar(stats: ContributionStats): void {
-    if (stats.byTool.size === 0) return;
+    if (stats.totalLines === 0) return;
 
     console.log(chalk.bold('📈 Contribution Distribution'));
     console.log();
 
-    const totalLines = Array.from(stats.byTool.values())
+    // Build slices: proportion each AI tool's share of repo lines + Unknown/Human
+    const totalAILinesAdded = Array.from(stats.byTool.values())
       .reduce((sum, t) => sum + t.linesAdded, 0);
 
-    const barWidth = 50;
+    const slices: { label: string; value: number; color: (s: string) => string }[] = [];
 
     for (const [tool, toolStats] of stats.byTool) {
-      const share = totalLines > 0 ? toolStats.linesAdded / totalLines : 0;
-      const filledWidth = Math.round(share * barWidth);
-      const emptyWidth = barWidth - filledWidth;
-      const color = TOOL_COLORS[tool] || chalk.white;
+      // Distribute aiContributedLines proportionally by each tool's linesAdded
+      const toolRepoLines = totalAILinesAdded > 0
+        ? Math.round(stats.aiContributedLines * (toolStats.linesAdded / totalAILinesAdded))
+        : 0;
+      if (toolRepoLines > 0) {
+        const color = TOOL_COLORS[tool] || chalk.white;
+        slices.push({ label: TOOL_NAMES[tool], value: toolRepoLines, color: (s: string) => color(s) });
+      }
+    }
 
-      const bar = color('█'.repeat(filledWidth)) + chalk.gray('░'.repeat(emptyWidth));
-      const percentage = (share * 100).toFixed(1).padStart(5) + '%';
+    const humanLines = stats.totalLines - stats.aiContributedLines;
+    if (humanLines > 0) {
+      slices.push({ label: 'Unknown/Human', value: humanLines, color: (s: string) => chalk.dim(s) });
+    }
 
-      console.log(`  ${TOOL_NAMES[tool].padEnd(12)} ${bar} ${percentage}`);
+    const total = slices.reduce((sum, s) => sum + s.value, 0);
+    if (total === 0) return;
+
+    // Build cumulative angle boundaries (0 = top, clockwise, up to 2*PI)
+    const boundaries: number[] = [0];
+    for (const slice of slices) {
+      boundaries.push(boundaries[boundaries.length - 1] + (slice.value / total) * 2 * Math.PI);
+    }
+
+    // Render pie chart on a character grid
+    const radius = 7;
+    const aspect = 2; // terminal chars are ~2x tall as wide
+    const pieLines: string[] = [];
+
+    for (let y = -radius; y <= radius; y++) {
+      let line = '';
+      for (let x = -radius * aspect; x <= radius * aspect; x++) {
+        const nx = x / aspect;
+        const dist = Math.sqrt(nx * nx + y * y);
+        if (dist <= radius + 0.5) {
+          // Angle from top, clockwise: atan2(x, -y)
+          const angle = ((Math.atan2(nx, -y) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+          let sliceIdx = 0;
+          for (let i = 0; i < slices.length; i++) {
+            if (angle >= boundaries[i] && angle < boundaries[i + 1]) {
+              sliceIdx = i;
+              break;
+            }
+          }
+          line += slices[sliceIdx].color('█');
+        } else {
+          line += ' ';
+        }
+      }
+      pieLines.push(line);
+    }
+
+    // Build legend lines
+    const legendLines: string[] = [];
+    for (const slice of slices) {
+      const pct = ((slice.value / total) * 100).toFixed(1);
+      const dot = slice.color('●');
+      legendLines.push(`${dot} ${slice.label.padEnd(14)} ${pct.padStart(5)}%  (${slice.value} lines)`);
+    }
+
+    // Combine pie + legend (legend centered vertically beside the pie)
+    const legendStart = Math.floor((pieLines.length - legendLines.length) / 2);
+
+    for (let i = 0; i < pieLines.length; i++) {
+      const legendIdx = i - legendStart;
+      const legend = (legendIdx >= 0 && legendIdx < legendLines.length)
+        ? '   ' + legendLines[legendIdx]
+        : '';
+      console.log('  ' + pieLines[i] + legend);
     }
 
     console.log();
