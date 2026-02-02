@@ -3,7 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/ai-credit.svg)](https://www.npmjs.com/package/ai-credit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A command-line tool to track and analyze AI coding assistants' contributions in your codebase. Supports **Claude Code**, **Codex CLI**, **Gemini CLI**, and **Opencode**.
+A command-line tool to track and analyze AI coding assistants' contributions in your codebase (macOS/Linux). Supports **Claude Code**, **Codex CLI**, **Gemini CLI**, and **Opencode**.
 
 ## Quick Start
 
@@ -18,7 +18,7 @@ ai-credit
 
 ## Features
 
-- 🔍 **Auto-detection**: Automatically finds AI tool session data on your system
+- 🔍 **Auto-detection**: Automatically finds AI tool session data on your system (macOS/Linux)
 - 📊 **Detailed Statistics**: Lines of code, files modified, contribution ratios
 - 🤖 **Multi-tool Support**: Claude Code, Codex CLI, Gemini CLI, Opencode
 - 📈 **Visual Reports**: Console, JSON, and Markdown output formats
@@ -72,6 +72,7 @@ Shows which AI tools have data available on your system:
   Claude Code     ~/.claude/projects/              ✓ Available
   Codex CLI       ~/.codex/sessions/               ✓ Available
   Gemini CLI      ~/.gemini/tmp/                   ✗ Not found
+  Opencode        ~/.local/share/opencode/         ✓ Available
 ```
 
 ### File-level Analysis
@@ -101,35 +102,57 @@ Lists all AI sessions for the repository.
 ## Output Example
 
 ```
-╭─────────────────────────────────────────────────╮
-│ AI Contribution Analysis                        │
-│ Repository: /path/to/your/repo                  │
-│ Scan time: 2024-01-15 14:30:00                  │
-╰─────────────────────────────────────────────────╯
+ai-credit (main) npx ai-credit
+Leave a 🌟 star if you like it: https://github.com/debugtheworldbot/ai-credit
 
-                    📊 Overview
-┏━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┓
-┃ Metric       ┃ Value   ┃ AI Contribution     ┃
-┡━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━┩
-│ Total Files  │ 150     │ 45 (30.0%)          │
-│ Total Lines  │ 12500   │ 3750 (30.0%)        │
-│ AI Sessions  │ 28      │ -                   │
-└──────────────┴─────────┴─────────────────────┘
+╭──────────────────────────────────────────────────╮
+│ AI Contribution Analysis                         │
+│ Repository: /Users/eric/Developer/ai-credit      │
+│ Scan time: 2/2/2026, 4:22:53 PM                  │
+╰──────────────────────────────────────────────────╯
+📊 Overview
+┌─────────────┬───────┬─────────────────┐
+│ Metric      │ Value │ AI Contribution │
+├─────────────┼───────┼─────────────────┤
+│ Total Files │ 18    │ 15 (83.3%)      │
+├─────────────┼───────┼─────────────────┤
+│ Total Lines │ 3496  │ 1660 (47.5%)    │
+├─────────────┼───────┼─────────────────┤
+│ AI Sessions │ 6     │ -               │
+└─────────────┴───────┴─────────────────┘
 
-              🤖 Contribution by AI Tool
-┏━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━┳━━━━━━━━━━━━━┓
-┃ Tool         ┃ Sessions ┃ Files ┃ Lines Added ┃
-┡━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━╇━━━━━━━━━━━━━┩
-│ Claude Code  │ 15       │ 30    │ +2500       │
-│ Codex CLI    │ 10       │ 20    │ +1000       │
-│ Opencode     │ 3        │ 5     │ +250        │
-└──────────────┴──────────┴───────┴─────────────┘
+🤖 Contribution by AI Tool
+┌───────────────────────────────┬──────────┬───────┬─────────────┬───────────────┬──────────────────┐
+│ Tool / Model                  │ Sessions │ Files │ Lines Added │ Lines Removed │ Share            │
+├───────────────────────────────┼──────────┼───────┼─────────────┼───────────────┼──────────────────┤
+│ Opencode                      │ 2        │ 12    │ +558        │ -128          │ 32.2%            │
+├───────────────────────────────┼──────────┼───────┼─────────────┼───────────────┼──────────────────┤
+│   └─ kimi-k2.5-free           │ 2        │ 12    │ +558        │ -128          │ 100.0% (of tool) │
+├───────────────────────────────┼──────────┼───────┼─────────────┼───────────────┼──────────────────┤
+│ Codex CLI                     │ 1        │ 11    │ +482        │ -303          │ 27.8%            │
+├───────────────────────────────┼──────────┼───────┼─────────────┼───────────────┼──────────────────┤
+│   └─ gpt-5.2-codex            │ 1        │ 11    │ +482        │ -303          │ 100.0% (of tool) │
+├───────────────────────────────┼──────────┼───────┼─────────────┼───────────────┼──────────────────┤
+│ Gemini CLI                    │ 2        │ 11    │ +357        │ -262          │ 20.6%            │
+├───────────────────────────────┼──────────┼───────┼─────────────┼───────────────┼──────────────────┤
+│   └─ gemini-2.5-pro           │ 1        │ 8     │ +330        │ -237          │ 92.4% (of tool)  │
+├───────────────────────────────┼──────────┼───────┼─────────────┼───────────────┼──────────────────┤
+│   └─ gemini-3-pro-preview     │ 1        │ 5     │ +27         │ -25           │ 7.6% (of tool)   │
+├───────────────────────────────┼──────────┼───────┼─────────────┼───────────────┼──────────────────┤
+│ Claude Code                   │ 1        │ 5     │ +338        │ -452          │ 19.5%            │
+├───────────────────────────────┼──────────┼───────┼─────────────┼───────────────┼──────────────────┤
+│   └─ claude-opus-4-5-20251101 │ 1        │ 5     │ +338        │ -452          │ 100.0% (of tool) │
+└───────────────────────────────┴──────────┴───────┴─────────────┴───────────────┴──────────────────┘
 
 📈 Contribution Distribution
 
-  Claude Code  ████████████████████████████░░░░░░░░░░░░░░░░░░░░░░ 66.7%
-  Codex CLI    ████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 26.7%
-  Opencode     ███░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  6.7%
+  🟧🟧🟧🟧🟧🟧🟦🟦🟦🟦🟦🟪🟪🟪🟪🟪🟪🟩🟩🟩⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜
+
+  🟠 Opencode        15.3%  (534 lines)
+  🔵 Codex CLI       13.2%  (461 lines)
+  🟣 Gemini CLI       9.8%  (342 lines)
+  🟢 Claude Code      9.2%  (323 lines)
+  ⚪ Unknown/Human   52.5%  (1836 lines)
 ```
 
 ## Supported AI Tools
@@ -217,13 +240,14 @@ Here's a detailed breakdown of the parsing method for each supported tool:
 ### 3. Gemini CLI
 
 -   **File Format**: JSON (`.json`), where one file represents a complete session.
--   **Scan Path**: `~/.gemini/tmp/<project_hash>/chats/*.json`
+-   **Scan Paths**: `~/.gemini/tmp/<hash>/chats/*.json`, `~/.gemini/history/*.json`, `~/.gemini/sessions/*.json`
 -   **Parsing Logic**:
-    1.  The tool first calculates the corresponding `<project_hash>` from the target project path to locate the specific `chats` directory.
+    1.  The scanner searches Gemini’s session JSON files under common locations (`tmp`, `history`, `sessions`).
     2.  It parses the entire JSON file, which typically contains a `"messages"` or `"turns"` array logging the conversation history.
     3.  It iterates through the `messages` array, looking for `"parts"` arrays within messages from the `"assistant"` role.
-    4.  Within the `parts` array, it searches for an object containing a `"functionCall"`. This object's structure is similar to that of Codex CLI.
+    4.  Within the `parts` array, it searches for an object containing a `"functionCall"` (or `toolCalls`). This object's structure is similar to Codex CLI.
     5.  It extracts the `"name"` (function name) and `"args"` (arguments dictionary) from the `functionCall` object.
+    6.  **Project matching**: if the session JSON has an explicit project path (`projectPath/cwd/...`), it must match the target repo. If not, the scanner only keeps tool calls whose `file_path` is inside the target repo.
 
 **Example (Simplified Gemini CLI JSON Fragment):**
 
@@ -266,20 +290,23 @@ The tool applies a strict verification rule when calculating AI contribution sta
 
 1. **Parse AI Session Logs**: The scanner reads session files from each AI tool and extracts file change events (writes, edits, patches).
 
-2. **Extract Changed Content**: For each file change, the tool captures:
+2. **Build Repository File Set**: The tool gathers repository files using text-file extensions, excluding common build/vendor folders and honoring the root `.gitignore`.
+
+3. **Extract Changed Content**: For each file change, the tool captures:
    - The file path
    - Lines added (new content)
    - Lines removed (old content)
 
-3. **Verify Against Current Codebase**: Before counting any line as an AI contribution, the tool:
+4. **Verify Against Current Codebase**: Before counting any line as an AI contribution, the tool:
    - Reads the current content of the target file from the repository
    - For each line that AI claims to have added, checks if an **identical line** exists in the current file
    - Only lines that match exactly (character-for-character) are counted
 
-4. **Calculate Statistics**: The verified lines are then aggregated into:
+5. **Calculate Statistics**: The verified lines are then aggregated into:
    - Per-file contribution counts
    - Per-tool contribution totals
    - Overall repository contribution ratios
+   - **Sessions, files, and models are counted only when at least one verified line exists**
 
 ### Example
 
@@ -312,6 +339,7 @@ This methodology ensures that:
 - Cannot detect AI-generated code that was copy-pasted manually
 - Accuracy depends on the completeness of AI tool session logs
 - Some AI tools may not record all file operations
+- Files ignored by the root `.gitignore` are excluded from Total Files/Lines
 
 ## Contributing
 

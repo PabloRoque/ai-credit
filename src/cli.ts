@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 
-import { Command } from 'commander';
-import { Worker, isMainThread, parentPort, workerData } from 'worker_threads';
-import { fileURLToPath } from 'url';
-import chalk from 'chalk';
-import * as path from 'path';
-import * as fs from 'fs';
-import { ContributionAnalyzer } from './analyzer.js';
-import { ConsoleReporter, JsonReporter, MarkdownReporter } from './reporter.js';
-import { AITool, OutputFormat } from './types.js';
+import chalk from 'chalk'
+import { Command } from 'commander'
+import * as fs from 'fs'
+import * as path from 'path'
+import { fileURLToPath } from 'url'
+import { Worker, isMainThread, parentPort, workerData } from 'worker_threads'
+import { ContributionAnalyzer } from './analyzer.js'
+import { ConsoleReporter, JsonReporter, MarkdownReporter } from './reporter.js'
+import { AITool, OutputFormat } from './types.js'
 
 // Worker thread: run analysis off the main thread so ora can animate
 if (!isMainThread) {
@@ -143,7 +143,7 @@ function parseTools(toolStr: string | undefined): AITool[] | undefined {
 const program = new Command();
 
 program
-  .name('ai-contrib')
+  .name('ai-credit')
   .description('CLI tool to track and analyze AI coding assistants\' contributions in your codebase')
   .version('1.0.0');
 
