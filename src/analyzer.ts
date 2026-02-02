@@ -5,6 +5,7 @@ import {
   AISession,
   AITool,
   ContributionStats,
+  FileChange,
   FileStats,
   ToolStats,
 } from './types.js';
@@ -16,6 +17,12 @@ import {
   AiderScanner,
   OpencodeScanner,
 } from './scanners/index.js';
+
+type RepoFileInfo = {
+  totalLines: number;
+  nonEmptyLines: number;
+  lineSet: Set<string>;
+};
 
 /**
  * Main analyzer that coordinates all scanners and computes statistics
@@ -91,11 +98,12 @@ export class ContributionAnalyzer {
     
     // Get repository file stats
     const repoFiles = this.getRepoFiles();
-    const totalLines = this.countTotalLines(repoFiles);
+    const repoFileIndex = this.buildRepoFileIndex(repoFiles);
+    const totalLines = this.sumRepoLines(repoFileIndex);
 
     // Compute statistics
-    const byTool = this.computeToolStats(sessions);
-    const byFile = this.computeFileStats(sessions, repoFiles);
+    const byTool = this.computeToolStats(sessions, repoFileIndex);
+    const byFile = this.computeFileStats(sessions, repoFileIndex);
 
     // Count AI-touched files and lines (only count files that exist in repo)
     let aiTouchedFiles = 0;
@@ -178,27 +186,86 @@ export class ContributionAnalyzer {
   }
 
   /**
-   * Count total lines in all repository files
+   * Build a file index for verification and totals
    */
-  private countTotalLines(files: string[]): number {
-    let total = 0;
+  private buildRepoFileIndex(files: string[]): Map<string, RepoFileInfo> {
+    const index = new Map<string, RepoFileInfo>();
 
     for (const file of files) {
       try {
         const content = fs.readFileSync(path.join(this.projectPath, file), 'utf-8');
-        total += content.split('\n').length;
+        const totalLines = content.split('\n').length;
+        const normalizedLines = content.split(/\r?\n/);
+        const nonEmptyLines = normalizedLines.filter(line => line.length > 0).length;
+        const lineSet = new Set(normalizedLines.filter(line => line.length > 0));
+        index.set(file, { totalLines, nonEmptyLines, lineSet });
       } catch {
-        // Ignore unreadable files
+        index.set(file, { totalLines: 0, nonEmptyLines: 0, lineSet: new Set() });
       }
     }
 
+    return index;
+  }
+
+  /**
+   * Sum total lines from the repository index
+   */
+  private sumRepoLines(repoFileIndex: Map<string, RepoFileInfo>): number {
+    let total = 0;
+    for (const info of repoFileIndex.values()) {
+      total += info.totalLines;
+    }
     return total;
+  }
+
+  /**
+   * Split content into non-empty lines
+   */
+  private splitNonEmptyLines(content: string | undefined): string[] {
+    if (!content) return [];
+    return content.split(/\r?\n/).filter(line => line.length > 0);
+  }
+
+  /**
+   * Get added lines from a change, falling back to content
+   */
+  private getAddedLines(change: FileChange): string[] {
+    if (change.addedLines && change.addedLines.length > 0) {
+      return change.addedLines;
+    }
+    if (change.content) {
+      return this.splitNonEmptyLines(change.content);
+    }
+    return [];
+  }
+
+  /**
+   * Count verified added lines that still exist in the repo file
+   */
+  private countVerifiedAddedLines(change: FileChange, fileInfo: RepoFileInfo | undefined): number {
+    if (!fileInfo) return 0;
+    const addedLines = this.getAddedLines(change);
+    if (addedLines.length === 0) return 0;
+
+    let matched = 0;
+    for (const line of addedLines) {
+      if (line.length === 0) continue;
+      if (fileInfo.lineSet.has(line)) {
+        matched++;
+      }
+    }
+
+    if (change.linesAdded > 0) {
+      return Math.min(matched, change.linesAdded);
+    }
+
+    return matched;
   }
 
   /**
    * Compute statistics by AI tool
    */
-  private computeToolStats(sessions: AISession[]): Map<AITool, ToolStats> {
+  private computeToolStats(sessions: AISession[], repoFileIndex: Map<string, RepoFileInfo>): Map<AITool, ToolStats> {
     const stats = new Map<AITool, ToolStats>();
     // Track unique files per tool across all sessions
     const filesByTool = new Map<AITool, Set<string>>();
@@ -229,7 +296,9 @@ export class ContributionAnalyzer {
       const toolFiles = filesByTool.get(session.tool)!;
       for (const change of session.changes) {
         toolFiles.add(change.filePath);
-        toolStats.linesAdded += change.linesAdded;
+        const fileInfo = repoFileIndex.get(change.filePath);
+        const verifiedAdded = this.countVerifiedAddedLines(change, fileInfo);
+        toolStats.linesAdded += verifiedAdded;
         toolStats.linesRemoved += change.linesRemoved;
         
         if (change.changeType === 'create') {
@@ -258,7 +327,7 @@ export class ContributionAnalyzer {
 
         const modelFiles = filesByModel.get(`${session.tool}:${modelName}`)!;
         modelFiles.add(change.filePath);
-        modelStats.linesAdded += change.linesAdded;
+        modelStats.linesAdded += verifiedAdded;
         modelStats.linesRemoved += change.linesRemoved;
 
         if (change.changeType === 'create') {
@@ -304,22 +373,14 @@ export class ContributionAnalyzer {
   /**
    * Compute statistics by file
    */
-  private computeFileStats(sessions: AISession[], repoFiles: string[]): Map<string, FileStats> {
+  private computeFileStats(sessions: AISession[], repoFileIndex: Map<string, RepoFileInfo>): Map<string, FileStats> {
     const stats = new Map<string, FileStats>();
 
     // Initialize stats for all repo files
-    for (const file of repoFiles) {
-      let totalLines = 0;
-      try {
-        const content = fs.readFileSync(path.join(this.projectPath, file), 'utf-8');
-        totalLines = content.split('\n').length;
-      } catch {
-        // Ignore
-      }
-
+    for (const [file, info] of repoFileIndex) {
       stats.set(file, {
         filePath: file,
-        totalLines,
+        totalLines: info.nonEmptyLines,
         aiContributedLines: 0,
         aiContributionRatio: 0,
         contributions: new Map(),
@@ -343,10 +404,12 @@ export class ContributionAnalyzer {
           stats.set(change.filePath, fileStats);
         }
 
-        fileStats.aiContributedLines += change.linesAdded;
+        const fileInfo = repoFileIndex.get(change.filePath);
+        const verifiedAdded = this.countVerifiedAddedLines(change, fileInfo);
+        fileStats.aiContributedLines += verifiedAdded;
         
         const currentToolContrib = fileStats.contributions.get(session.tool) || 0;
-        fileStats.contributions.set(session.tool, currentToolContrib + change.linesAdded);
+        fileStats.contributions.set(session.tool, currentToolContrib + verifiedAdded);
       }
     }
 
@@ -359,8 +422,8 @@ export class ContributionAnalyzer {
           1.0
         );
       } else if (fileStats.aiContributedLines > 0) {
-        // File was deleted but had AI contributions
-        fileStats.aiContributionRatio = 1.0;
+        // File was deleted but had AI contributions (cannot verify)
+        fileStats.aiContributionRatio = 0;
       }
     }
 

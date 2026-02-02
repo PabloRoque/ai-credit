@@ -192,19 +192,27 @@ export class ClaudeScanner extends BaseScanner {
     let changeType: 'create' | 'modify' | 'delete' = 'modify';
     let linesAdded = 0;
     let linesRemoved = 0;
+    let addedLines: string[] = [];
 
     if (writeOps.includes(toolName)) {
       changeType = oldContent ? 'modify' : 'create';
       linesAdded = this.countLines(newContent);
       linesRemoved = this.countLines(oldContent);
+      addedLines = this.extractNonEmptyLines(newContent);
     } else if (editOps.includes(toolName)) {
       changeType = 'modify';
       linesAdded = this.countLines(newContent);
       linesRemoved = this.countLines(oldContent);
+      if (oldContent && newContent) {
+        addedLines = this.diffAddedLines(oldContent, newContent);
+      } else {
+        addedLines = this.extractNonEmptyLines(newContent);
+      }
     } else {
       // Unknown tool, try to extract what we can
       if (newContent) {
         linesAdded = this.countLines(newContent);
+        addedLines = this.extractNonEmptyLines(newContent);
       }
     }
 
@@ -218,6 +226,7 @@ export class ClaudeScanner extends BaseScanner {
       timestamp: timestamp ? new Date(timestamp) : new Date(),
       tool: this.tool,
       content: newContent,
+      addedLines,
       model,
     };
   }

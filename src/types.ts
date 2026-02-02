@@ -20,6 +20,7 @@ export interface FileChange {
   timestamp: Date;
   tool: AITool;
   content?: string;
+  addedLines?: string[];
   model?: string;
 }
 

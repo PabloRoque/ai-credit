@@ -181,12 +181,13 @@ export class CodexScanner extends BaseScanner {
     if (!input) return [];
 
     const changes: FileChange[] = [];
-    const lines = input.split('\n');
+    const lines = input.split(/\r?\n/);
 
     let currentFile: string | null = null;
     let changeType: 'create' | 'modify' | 'delete' = 'modify';
     let linesAdded = 0;
     let linesRemoved = 0;
+    let addedLines: string[] = [];
 
     const flushFile = () => {
       if (currentFile && (linesAdded > 0 || linesRemoved > 0)) {
@@ -198,13 +199,15 @@ export class CodexScanner extends BaseScanner {
           changeType,
           timestamp: timestamp ? new Date(timestamp) : new Date(),
           tool: this.tool,
-          content: '',
+          content: addedLines.join('\n'),
+          addedLines,
         });
       }
       currentFile = null;
       linesAdded = 0;
       linesRemoved = 0;
       changeType = 'modify';
+      addedLines = [];
     };
 
     for (const line of lines) {
@@ -229,6 +232,7 @@ export class CodexScanner extends BaseScanner {
       } else if (currentFile) {
         if (line.startsWith('+')) {
           linesAdded++;
+          addedLines.push(line.substring(1));
         } else if (line.startsWith('-')) {
           linesRemoved++;
         }
@@ -257,10 +261,12 @@ export class CodexScanner extends BaseScanner {
     let changeType: 'create' | 'modify' | 'delete' = 'modify';
     let linesAdded = 0;
     let linesRemoved = 0;
+    let addedLines: string[] = [];
 
     if (writeOps.includes(funcName)) {
       changeType = 'create';
       linesAdded = this.countLines(newContent);
+      addedLines = this.extractNonEmptyLines(newContent);
     } else if (editOps.includes(funcName)) {
       changeType = 'modify';
       linesAdded = this.countLines(newContent);
@@ -269,6 +275,11 @@ export class CodexScanner extends BaseScanner {
         const diffStats = this.parseDiff(args.diff);
         linesAdded = diffStats.added;
         linesRemoved = diffStats.removed;
+        addedLines = this.extractAddedLinesFromDiff(args.diff);
+      } else if (oldContent && newContent) {
+        addedLines = this.diffAddedLines(oldContent, newContent);
+      } else {
+        addedLines = this.extractNonEmptyLines(newContent);
       }
     } else {
       return null;
@@ -284,6 +295,7 @@ export class CodexScanner extends BaseScanner {
       timestamp: timestamp ? new Date(timestamp) : new Date(),
       tool: this.tool,
       content: newContent,
+      addedLines,
     };
   }
 

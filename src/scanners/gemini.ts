@@ -256,18 +256,26 @@ export class GeminiScanner extends BaseScanner {
     // Calculate diff stats
     let linesAdded = 0;
     let linesRemoved = 0;
+    let addedLines: string[] = [];
 
     if (writeOps.includes(funcName)) {
       linesAdded = this.countLines(newContent);
       linesRemoved = this.countLines(oldContent); // Usually 0 for write, unless overwriting
+      addedLines = this.extractNonEmptyLines(newContent);
     } else if (editOps.includes(funcName)) {
       // Use LCS for edits to be accurate
       const stats = this.calculateDiffStats(oldContent, newContent);
       linesAdded = stats.added;
       linesRemoved = stats.removed;
+      if (oldContent && newContent) {
+        addedLines = this.diffAddedLines(oldContent, newContent);
+      } else {
+        addedLines = this.extractNonEmptyLines(newContent);
+      }
     } else {
       if (newContent) {
         linesAdded = this.countLines(newContent);
+        addedLines = this.extractNonEmptyLines(newContent);
       }
     }
 
@@ -281,6 +289,7 @@ export class GeminiScanner extends BaseScanner {
       timestamp: timestamp || new Date(),
       tool: this.tool,
       content: newContent,
+      addedLines,
       model,
     };
   }

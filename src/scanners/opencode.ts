@@ -178,6 +178,7 @@ export class OpencodeScanner extends BaseScanner {
     // additions/deletions are pre-calculated by opencode
     const linesAdded = typeof diff.additions === 'number' ? diff.additions : 0;
     const linesRemoved = typeof diff.deletions === 'number' ? diff.deletions : 0;
+    const addedLines = this.diffAddedLines(beforeContent, afterContent);
 
     return {
       filePath,
@@ -188,6 +189,7 @@ export class OpencodeScanner extends BaseScanner {
       tool: this.tool,
       model,
       content: afterContent,
+      addedLines,
     };
   }
 

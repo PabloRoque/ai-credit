@@ -131,6 +131,7 @@ export class AiderScanner extends BaseScanner {
           timestamp: sessionTimestamp,
           tool: this.tool,
           content: code,
+          addedLines: this.extractNonEmptyLines(code),
         });
       }
     }
@@ -155,6 +156,8 @@ export class AiderScanner extends BaseScanner {
             changeType: 'modify',
             timestamp: sessionTimestamp,
             tool: this.tool,
+            content: replaceContent,
+            addedLines: this.extractNonEmptyLines(replaceContent),
           });
         }
       }
@@ -180,6 +183,8 @@ export class AiderScanner extends BaseScanner {
           changeType: 'modify',
           timestamp: sessionTimestamp,
           tool: this.tool,
+          content: replaceContent,
+          addedLines: this.extractNonEmptyLines(replaceContent),
         });
       }
     }
@@ -215,6 +220,12 @@ export class AiderScanner extends BaseScanner {
         // Accumulate lines
         existing.linesAdded += change.linesAdded;
         existing.linesRemoved += change.linesRemoved;
+        if (change.addedLines && change.addedLines.length > 0) {
+          if (!existing.addedLines) {
+            existing.addedLines = [];
+          }
+          existing.addedLines.push(...change.addedLines);
+        }
       }
     }
 
