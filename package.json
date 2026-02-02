@@ -1,6 +1,6 @@
 {
   "name": "ai-credit",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "description": "CLI tool to track and analyze AI coding assistants' contributions in your codebase",
   "main": "dist/index.js",
   "type": "module",
@@ -11,6 +11,7 @@
     "build": "tsc",
     "start": "node dist/cli.js",
     "dev": "tsc && node dist/cli.js",
+    "pub": "npm run build && npm publish",
     "prepublishOnly": "npm run build"
   },
   "keywords": [

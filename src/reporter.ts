@@ -1,7 +1,7 @@
-import * as fs from 'fs';
-import chalk from 'chalk';
-import Table from 'cli-table3';
-import { AITool, ContributionStats, FileStats, ToolStats } from './types.js';
+import chalk from 'chalk'
+import Table from 'cli-table3'
+import * as fs from 'fs'
+import { AITool, ContributionStats } from './types.js'
 
 /**
  * Tool display names
@@ -46,6 +46,8 @@ export class ConsoleReporter {
     const repoLine = `Repository: ${stats.repoPath}`;
     const timeLine = `Scan time: ${stats.scanTime.toLocaleString()}`;
 
+    console.log();
+    console.log(chalk.dim('Leave a 🌟 star if you like it: https://github.com/debugtheworldbot/ai-credit'));
     console.log();
     console.log(chalk.cyan('╭' + '─'.repeat(boxWidth) + '╮'));
     console.log(chalk.cyan('│') + ' ' + chalk.bold(title.padEnd(boxWidth - 1)) + chalk.cyan('│'));
