@@ -86,17 +86,7 @@ export class OpencodeScanner extends BaseScanner {
     const changes: FileChange[] = [];
     let sessionModel: string | undefined;
 
-    // Try to get changes from session summary
-    if (sessionData.summary?.diffs && Array.isArray(sessionData.summary.diffs)) {
-      for (const diff of sessionData.summary.diffs) {
-        const change = this.parseDiff(diff, projectPath, sessionTimestamp, sessionModel);
-        if (change) {
-          changes.push(change);
-        }
-      }
-    }
-
-    // Also parse individual message files if available
+    // First, try to parse individual message files if available (more granular)
     const messageDir = path.join(basePath, 'storage', 'message');
     if (fs.existsSync(messageDir) && sessionData.id) {
       try {
@@ -119,6 +109,16 @@ export class OpencodeScanner extends BaseScanner {
         }
       } catch {
         // Ignore errors
+      }
+    }
+
+    // If no changes found in messages, fall back to session summary
+    if (changes.length === 0 && sessionData.summary?.diffs && Array.isArray(sessionData.summary.diffs)) {
+      for (const diff of sessionData.summary.diffs) {
+        const change = this.parseDiff(diff, projectPath, sessionTimestamp, sessionModel);
+        if (change) {
+          changes.push(change);
+        }
       }
     }
 
@@ -170,26 +170,19 @@ export class OpencodeScanner extends BaseScanner {
     const beforeContent = diff.before || '';
     const afterContent = diff.after || '';
 
-    const beforeLines = beforeContent ? beforeContent.split('\n').length : 0;
-    const afterLines = afterContent ? afterContent.split('\n').length : 0;
+    const changeType = (!beforeContent && afterContent) ? 'create' 
+      : (beforeContent && !afterContent) ? 'delete' 
+      : 'modify';
 
-    let changeType: 'create' | 'modify' | 'delete' = 'modify';
-    if (!beforeContent && afterContent) {
-      changeType = 'create';
-    } else if (beforeContent && !afterContent) {
-      changeType = 'delete';
-    }
-
-    const linesAdded = Math.max(0, afterLines - beforeLines);
-    const linesRemoved = Math.max(0, beforeLines - afterLines);
-
-    const realLinesAdded = afterContent ? this.countLines(afterContent) : 0;
-    const realLinesRemoved = beforeContent ? this.countLines(beforeContent) : 0;
+    // Use opencode's provided diff stats if available (most accurate)
+    // additions/deletions are pre-calculated by opencode
+    const linesAdded = typeof diff.additions === 'number' ? diff.additions : 0;
+    const linesRemoved = typeof diff.deletions === 'number' ? diff.deletions : 0;
 
     return {
       filePath,
-      linesAdded: realLinesAdded,
-      linesRemoved: realLinesRemoved,
+      linesAdded,
+      linesRemoved,
       changeType,
       timestamp,
       tool: this.tool,
