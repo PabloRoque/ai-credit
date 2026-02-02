@@ -1,0 +1,47 @@
+{
+  "name": "ai-contrib",
+  "version": "1.0.0",
+  "description": "CLI tool to track and analyze AI coding assistants' contributions in your codebase",
+  "main": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "ai-contrib": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/cli.js",
+    "dev": "tsx src/cli.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "ai",
+    "contribution",
+    "claude",
+    "codex",
+    "gemini",
+    "aider",
+    "code-analysis",
+    "cli"
+  ],
+  "author": "",
+  "license": "MIT",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "cli-table3": "^0.6.5",
+    "commander": "^12.1.0",
+    "glob": "^10.4.5",
+    "ora": "^8.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsx": "^4.15.0",
+    "typescript": "^5.4.5"
+  }
+}
