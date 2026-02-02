@@ -298,9 +298,9 @@ program
 
     const toolColors: Record<AITool, typeof chalk> = {
       [AITool.CLAUDE_CODE]: chalk.hex('#D97757'),
-      [AITool.CODEX]: chalk.green,
-      [AITool.GEMINI]: chalk.blue,
-      [AITool.AIDER]: chalk.magenta,
+      [AITool.CODEX]: chalk.hex('#00A67E'),
+      [AITool.GEMINI]: chalk.hex('#4796E3'),
+      [AITool.AIDER]: chalk.hex('#D93B3B'),
       [AITool.OPENCODE]: chalk.yellow,
     };
 
