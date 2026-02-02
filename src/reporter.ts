@@ -59,7 +59,7 @@ export class ConsoleReporter {
    * Print overview statistics
    */
   private printOverview(stats: ContributionStats): void {
-    console.log(chalk.bold('                    📊 Overview'));
+    console.log(chalk.bold('📊 Overview'));
     
     const table = new Table({
       head: ['Metric', 'Value', 'AI Contribution'].map(h => chalk.bold(h)),
@@ -92,7 +92,7 @@ export class ConsoleReporter {
       return;
     }
 
-    console.log(chalk.bold('                🤖 Contribution by AI Tool'));
+    console.log(chalk.bold('🤖 Contribution by AI Tool'));
 
     const table = new Table({
       head: ['Tool / Model', 'Sessions', 'Files', 'Lines Added', 'Lines Removed', 'Share'].map(h => chalk.bold(h)),
@@ -102,7 +102,10 @@ export class ConsoleReporter {
     const totalLines = Array.from(stats.byTool.values())
       .reduce((sum, t) => sum + t.linesAdded, 0);
 
-    for (const [tool, toolStats] of stats.byTool) {
+    const sortedTools = Array.from(stats.byTool.entries())
+      .sort((a, b) => b[1].linesAdded - a[1].linesAdded);
+
+    for (const [tool, toolStats] of sortedTools) {
       const share = totalLines > 0 
         ? ((toolStats.linesAdded / totalLines) * 100).toFixed(1) 
         : '0.0';
@@ -163,7 +166,10 @@ export class ConsoleReporter {
 
     const slices: { label: string; value: number; color: (s: string) => string }[] = [];
 
-    for (const [tool, toolStats] of stats.byTool) {
+    const sortedTools = Array.from(stats.byTool.entries())
+      .sort((a, b) => b[1].linesAdded - a[1].linesAdded);
+
+    for (const [tool, toolStats] of sortedTools) {
       const toolRepoLines = totalAILinesAdded > 0
         ? Math.round(stats.aiContributedLines * (toolStats.linesAdded / totalAILinesAdded))
         : 0;
@@ -313,7 +319,9 @@ export class JsonReporter {
         total_sessions: stats.sessions.length,
       },
       by_tool: Object.fromEntries(
-        Array.from(stats.byTool.entries()).map(([tool, toolStats]) => [
+        Array.from(stats.byTool.entries())
+          .sort((a, b) => b[1].linesAdded - a[1].linesAdded)
+          .map(([tool, toolStats]) => [
           tool,
           {
             sessions_count: toolStats.sessionsCount,
@@ -397,7 +405,9 @@ export class MarkdownReporter {
       const totalLines = Array.from(stats.byTool.values())
         .reduce((sum, t) => sum + t.linesAdded, 0);
 
-      for (const [tool, toolStats] of stats.byTool) {
+      const sortedTools = Array.from(stats.byTool.entries())
+        .sort((a, b) => b[1].linesAdded - a[1].linesAdded);
+      for (const [tool, toolStats] of sortedTools) {
         const share = totalLines > 0 
           ? ((toolStats.linesAdded / totalLines) * 100).toFixed(1) 
           : '0.0';
