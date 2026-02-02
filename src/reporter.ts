@@ -138,7 +138,6 @@ export class ConsoleReporter {
     const slices: { label: string; value: number; color: (s: string) => string }[] = [];
 
     for (const [tool, toolStats] of stats.byTool) {
-      // Distribute aiContributedLines proportionally by each tool's linesAdded
       const toolRepoLines = totalAILinesAdded > 0
         ? Math.round(stats.aiContributedLines * (toolStats.linesAdded / totalAILinesAdded))
         : 0;
@@ -150,63 +149,40 @@ export class ConsoleReporter {
 
     const humanLines = stats.totalLines - stats.aiContributedLines;
     if (humanLines > 0) {
-      slices.push({ label: 'Unknown/Human', value: humanLines, color: (s: string) => chalk.dim(s) });
+      slices.push({ label: 'Unknown/Human', value: humanLines, color: (s: string) => chalk.gray(s) });
     }
 
     const total = slices.reduce((sum, s) => sum + s.value, 0);
     if (total === 0) return;
 
-    // Build cumulative angle boundaries (0 = top, clockwise, up to 2*PI)
-    const boundaries: number[] = [0];
+    // Render stacked horizontal bar
+    const barWidth = 60;
+    let bar = '';
+    const segments: { width: number; color: (s: string) => string }[] = [];
+
     for (const slice of slices) {
-      boundaries.push(boundaries[boundaries.length - 1] + (slice.value / total) * 2 * Math.PI);
+      const width = Math.max(1, Math.round((slice.value / total) * barWidth));
+      segments.push({ width, color: slice.color });
     }
 
-    // Render pie chart on a character grid
-    const radius = 7;
-    const aspect = 2; // terminal chars are ~2x tall as wide
-    const pieLines: string[] = [];
-
-    for (let y = -radius; y <= radius; y++) {
-      let line = '';
-      for (let x = -radius * aspect; x <= radius * aspect; x++) {
-        const nx = x / aspect;
-        const dist = Math.sqrt(nx * nx + y * y);
-        if (dist <= radius + 0.5) {
-          // Angle from top, clockwise: atan2(x, -y)
-          const angle = ((Math.atan2(nx, -y) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
-          let sliceIdx = 0;
-          for (let i = 0; i < slices.length; i++) {
-            if (angle >= boundaries[i] && angle < boundaries[i + 1]) {
-              sliceIdx = i;
-              break;
-            }
-          }
-          line += slices[sliceIdx].color('█');
-        } else {
-          line += ' ';
-        }
-      }
-      pieLines.push(line);
+    // Adjust rounding so total width matches barWidth
+    const totalWidth = segments.reduce((s, seg) => s + seg.width, 0);
+    if (totalWidth !== barWidth && segments.length > 0) {
+      segments[segments.length - 1].width += barWidth - totalWidth;
     }
 
-    // Build legend lines
-    const legendLines: string[] = [];
+    for (const seg of segments) {
+      bar += seg.color('█'.repeat(seg.width));
+    }
+
+    console.log(`  ${bar}`);
+    console.log();
+
+    // Legend with percentage bars per slice
     for (const slice of slices) {
-      const pct = ((slice.value / total) * 100).toFixed(1);
+      const pct = (slice.value / total) * 100;
       const dot = slice.color('●');
-      legendLines.push(`${dot} ${slice.label.padEnd(14)} ${pct.padStart(5)}%  (${slice.value} lines)`);
-    }
-
-    // Combine pie + legend (legend centered vertically beside the pie)
-    const legendStart = Math.floor((pieLines.length - legendLines.length) / 2);
-
-    for (let i = 0; i < pieLines.length; i++) {
-      const legendIdx = i - legendStart;
-      const legend = (legendIdx >= 0 && legendIdx < legendLines.length)
-        ? '   ' + legendLines[legendIdx]
-        : '';
-      console.log('  ' + pieLines[i] + legend);
+      console.log(`  ${dot} ${slice.label.padEnd(14)} ${pct.toFixed(1).padStart(5)}%  (${slice.value} lines)`);
     }
 
     console.log();
