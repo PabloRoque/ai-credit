@@ -94,7 +94,7 @@ export class CodexScanner extends BaseScanner {
 
       // Handle custom_tool_call (apply_patch) — the primary way Codex writes files
       if (entry.type === 'response_item' && payload.type === 'custom_tool_call') {
-        const patchChanges = this.parseApplyPatch(payload, projectPath, entry.timestamp);
+        const patchChanges = this.parseApplyPatch(payload, projectPath, sessionProjectPath, entry.timestamp);
         changes.push(...patchChanges);
         continue;
       }
@@ -111,7 +111,7 @@ export class CodexScanner extends BaseScanner {
           continue;
         }
 
-        const change = this.parseFunctionCall(funcName, args, projectPath, entry.timestamp);
+        const change = this.parseFunctionCall(funcName, args, projectPath, sessionProjectPath, entry.timestamp);
         if (change) {
           changes.push(change);
         }
@@ -122,7 +122,7 @@ export class CodexScanner extends BaseScanner {
       const toolCalls = entry.tool_calls || entry.function_calls || [];
       if (Array.isArray(toolCalls)) {
         for (const toolCall of toolCalls) {
-          const change = this.parseToolCall(toolCall, projectPath, entry.timestamp);
+          const change = this.parseToolCall(toolCall, projectPath, sessionProjectPath, entry.timestamp);
           if (change) {
             changes.push(change);
           }
@@ -131,7 +131,7 @@ export class CodexScanner extends BaseScanner {
 
       // Legacy: direct function format
       if (entry.function && entry.function.name) {
-        const change = this.parseToolCall({ function: entry.function }, projectPath, entry.timestamp);
+        const change = this.parseToolCall({ function: entry.function }, projectPath, sessionProjectPath, entry.timestamp);
         if (change) {
           changes.push(change);
         }
@@ -144,7 +144,9 @@ export class CodexScanner extends BaseScanner {
       const normalizedProjectPath = path.resolve(projectPath);
 
       if (!this.pathsMatch(normalizedSessionPath, normalizedProjectPath)) {
-        return null;
+        if (changes.length === 0) {
+          return null;
+        }
       }
     }
 
@@ -168,10 +170,24 @@ export class CodexScanner extends BaseScanner {
    * The session cwd must be exactly the project path or a subdirectory of it.
    */
   private pathsMatch(sessionPath: string, projectPath: string): boolean {
-    if (sessionPath === projectPath) return true;
+    const s = this.normForCompare(sessionPath);
+    const p = this.normForCompare(projectPath);
+    if (s === p) return true;
     // Session opened inside a subdirectory of the project
-    if (sessionPath.startsWith(projectPath + '/')) return true;
+    if (s.startsWith(p + '/')) return true;
     return false;
+  }
+
+  /**
+   * Normalize a path for comparison (trim trailing slash, normalize Windows case).
+   */
+  private normForCompare(p: string): string {
+    let s = this.toForwardSlash(p).replace(/\/+$/, '');
+    const isWindowsPath = /^[A-Za-z]:\//.test(s) || s.startsWith('//');
+    if (isWindowsPath) {
+      s = s.toLowerCase();
+    }
+    return s;
   }
 
   /**
@@ -188,11 +204,16 @@ export class CodexScanner extends BaseScanner {
    *   +new file content
    *   *** End Patch
    */
-  private parseApplyPatch(payload: any, projectPath: string, timestamp?: string): FileChange[] {
+  private parseApplyPatch(
+    payload: any,
+    projectPath: string,
+    sessionCwd: string | null,
+    timestamp?: string
+  ): FileChange[] {
     const name = (payload.name || '').toLowerCase();
     if (name !== 'apply_patch') return [];
 
-    const input = payload.input || '';
+    const input = this.resolvePatchInput(payload);
     if (!input) return [];
 
     const changes: FileChange[] = [];
@@ -206,17 +227,19 @@ export class CodexScanner extends BaseScanner {
 
     const flushFile = () => {
       if (currentFile && (linesAdded > 0 || linesRemoved > 0)) {
-        const filePath = this.normalizePath(currentFile, projectPath);
-        changes.push({
-          filePath,
-          linesAdded,
-          linesRemoved,
-          changeType,
-          timestamp: timestamp ? new Date(timestamp) : new Date(),
-          tool: this.tool,
-          content: addedLines.join('\n'),
-          addedLines,
-        });
+        const resolvedPath = this.resolveFilePath(currentFile, projectPath, sessionCwd);
+        if (resolvedPath) {
+          changes.push({
+            filePath: resolvedPath,
+            linesAdded,
+            linesRemoved,
+            changeType,
+            timestamp: timestamp ? new Date(timestamp) : new Date(),
+            tool: this.tool,
+            content: addedLines.join('\n'),
+            addedLines,
+          });
+        }
       }
       currentFile = null;
       linesAdded = 0;
@@ -260,9 +283,58 @@ export class CodexScanner extends BaseScanner {
   }
 
   /**
+   * Resolve the patch text from a Codex custom_tool_call payload.
+   */
+  private resolvePatchInput(payload: any): string | null {
+    const rawInput = payload?.input;
+    if (!rawInput) return null;
+    if (typeof rawInput === 'string') return rawInput;
+    if (Array.isArray(rawInput)) {
+      const parts = rawInput.filter(part => typeof part === 'string');
+      return parts.length > 0 ? parts.join('\n') : null;
+    }
+    if (typeof rawInput === 'object') {
+      const patch =
+        rawInput.patch ||
+        rawInput.diff ||
+        rawInput.text ||
+        rawInput.content ||
+        rawInput.input;
+      return typeof patch === 'string' && patch ? patch : null;
+    }
+    return null;
+  }
+
+  /**
+   * Resolve a file path against session cwd, then normalize to project-relative.
+   */
+  private resolveFilePath(
+    filePath: string,
+    projectPath: string,
+    sessionCwd: string | null
+  ): string | null {
+    let resolvedPath = filePath;
+    if (!path.isAbsolute(resolvedPath) && sessionCwd) {
+      resolvedPath = path.resolve(sessionCwd, resolvedPath);
+    }
+
+    if (!this.isProjectFile(resolvedPath, projectPath)) {
+      return null;
+    }
+
+    return this.normalizePath(resolvedPath, projectPath);
+  }
+
+  /**
    * Parse a function_call payload (e.g. shell_command with file write operations)
    */
-  private parseFunctionCall(funcName: string, args: any, projectPath: string, timestamp?: string): FileChange | null {
+  private parseFunctionCall(
+    funcName: string,
+    args: any,
+    projectPath: string,
+    sessionCwd: string | null,
+    timestamp?: string
+  ): FileChange | null {
     const writeOps = ['write_file', 'create_file', 'write', 'save_file', 'create', 'writefile'];
     const editOps = ['edit_file', 'apply_diff', 'patch', 'replace_in_file', 'edit', 'update_file', 'modify_file'];
 
@@ -271,7 +343,8 @@ export class CodexScanner extends BaseScanner {
     let oldContent = args.old_content || args.original || args.old_text || '';
 
     if (!filePath) return null;
-    filePath = this.normalizePath(filePath, projectPath);
+    const resolvedPath = this.resolveFilePath(filePath, projectPath, sessionCwd);
+    if (!resolvedPath) return null;
 
     let changeType: 'create' | 'modify' | 'delete' = 'modify';
     let linesAdded = 0;
@@ -303,7 +376,7 @@ export class CodexScanner extends BaseScanner {
     if (linesAdded === 0 && linesRemoved === 0) return null;
 
     return {
-      filePath,
+      filePath: resolvedPath,
       linesAdded,
       linesRemoved,
       changeType,
@@ -317,7 +390,12 @@ export class CodexScanner extends BaseScanner {
   /**
    * Parse a legacy tool_call object to extract file changes
    */
-  private parseToolCall(toolCall: any, projectPath: string, timestamp?: string): FileChange | null {
+  private parseToolCall(
+    toolCall: any,
+    projectPath: string,
+    sessionCwd: string | null,
+    timestamp?: string
+  ): FileChange | null {
     const func = toolCall.function;
     if (!func) return null;
 
@@ -334,7 +412,7 @@ export class CodexScanner extends BaseScanner {
       return null;
     }
 
-    return this.parseFunctionCall(funcName, args, projectPath, timestamp);
+    return this.parseFunctionCall(funcName, args, projectPath, sessionCwd, timestamp);
   }
 
   /**

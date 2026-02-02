@@ -24,10 +24,10 @@ export class ClaudeScanner extends BaseScanner {
 
   /**
    * Encode project path to match Claude's directory naming convention
-   * Claude encodes paths by replacing / with -
+   * Claude encodes paths by replacing / (and \ on Windows) with -
    */
   private encodeProjectPath(projectPath: string): string {
-    return projectPath.replace(/\//g, '-').replace(/^-/, '');
+    return projectPath.replace(/[\\/]/g, '-').replace(/^-/, '');
   }
 
   /**
@@ -35,6 +35,18 @@ export class ClaudeScanner extends BaseScanner {
    */
   private decodeProjectPath(encodedPath: string): string {
     return '/' + encodedPath.replace(/-/g, '/');
+  }
+
+  /**
+   * Normalize a path for comparison (lowercase drive letter, forward slashes)
+   */
+  private normForCompare(p: string): string {
+    let s = this.toForwardSlash(p);
+    // Normalize Windows drive letter to lowercase: C:/... -> c:/...
+    if (/^[A-Z]:\//.test(s)) {
+      s = s[0].toLowerCase() + s.slice(1);
+    }
+    return s;
   }
 
   scan(projectPath: string): AISession[] {
@@ -67,7 +79,9 @@ export class ClaudeScanner extends BaseScanner {
 
         // Check various matching criteria
         const decodedPath = this.decodeProjectPath(dir);
-        
+        const normProject = this.normForCompare(projectPath);
+        const normDecoded = this.normForCompare(decodedPath);
+
         // Match by:
         // 1. Directory name contains project basename
         // 2. Decoded path ends with project path
@@ -75,8 +89,8 @@ export class ClaudeScanner extends BaseScanner {
         // 4. Same basename
         if (dir.includes(projectBasename) ||
             dir.toLowerCase().includes(projectBasename.toLowerCase()) ||
-            decodedPath.endsWith(projectPath) ||
-            projectPath.endsWith(decodedPath.slice(1)) ||
+            normDecoded.endsWith(normProject) ||
+            normProject.endsWith(normDecoded.slice(1)) ||
             path.basename(decodedPath) === projectBasename) {
           possibleDirs.add(fullDir);
         }

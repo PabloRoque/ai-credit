@@ -26,9 +26,11 @@ export class GeminiScanner extends BaseScanner {
 
   /**
    * Hash project path to match Gemini's directory naming
+   * Normalize to forward slashes so the hash is consistent across platforms
    */
   private hashProjectPath(projectPath: string): string {
-    return crypto.createHash('md5').update(projectPath).digest('hex').substring(0, 16);
+    const normalized = this.toForwardSlash(projectPath);
+    return crypto.createHash('md5').update(normalized).digest('hex').substring(0, 16);
   }
 
   scan(projectPath: string): AISession[] {
@@ -224,8 +226,10 @@ export class GeminiScanner extends BaseScanner {
    * Check if two paths match or are related
    */
   private pathsMatch(path1: string, path2: string): boolean {
-    if (path1 === path2) return true;
-    if (path1.startsWith(path2 + path.sep)) return true;
+    const p1 = this.toForwardSlash(path1);
+    const p2 = this.toForwardSlash(path2);
+    if (p1 === p2) return true;
+    if (p1.startsWith(p2 + '/')) return true;
     return false;
   }
 

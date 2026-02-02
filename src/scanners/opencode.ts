@@ -153,9 +153,11 @@ export class OpencodeScanner extends BaseScanner {
    * Check if two paths match (session belongs to project)
    */
   private pathsMatch(sessionPath: string, projectPath: string): boolean {
-    if (sessionPath === projectPath) return true;
-    if (sessionPath.startsWith(projectPath + path.sep)) return true;
-    if (projectPath.startsWith(sessionPath + path.sep)) return true;
+    const s = this.toForwardSlash(sessionPath);
+    const p = this.toForwardSlash(projectPath);
+    if (s === p) return true;
+    if (s.startsWith(p + '/')) return true;
+    if (p.startsWith(s + '/')) return true;
     if (path.basename(sessionPath) === path.basename(projectPath)) return true;
     return false;
   }

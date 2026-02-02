@@ -35,7 +35,7 @@ export abstract class BaseScanner {
    * Resolve the full storage path
    */
   protected resolveStoragePath(): string {
-    return this.storagePath.replace('~', this.homeDir);
+    return path.join(this.storagePath.replace('~', this.homeDir));
   }
 
   /**
@@ -138,13 +138,20 @@ export abstract class BaseScanner {
   }
 
   /**
+   * Normalize separators to forward slashes (consistent with glob output)
+   */
+  protected toForwardSlash(p: string): string {
+    return p.replace(/\\/g, '/');
+  }
+
+  /**
    * Normalize file path relative to project
    */
   protected normalizePath(filePath: string, projectPath: string): string {
     if (path.isAbsolute(filePath)) {
-      return path.relative(projectPath, filePath);
+      return this.toForwardSlash(path.relative(projectPath, filePath));
     }
-    return filePath;
+    return this.toForwardSlash(filePath);
   }
 
   /**

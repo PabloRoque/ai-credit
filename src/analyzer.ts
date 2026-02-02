@@ -183,6 +183,9 @@ export class ContributionAnalyzer {
         return textExtensions.includes(ext) || !ext;
       });
 
+      // Normalize to forward slashes so keys match scanner output on all platforms
+      files = files.map(file => file.replace(/\\/g, '/'));
+
       const gitignorePath = path.join(this.projectPath, '.gitignore');
       if (fs.existsSync(gitignorePath)) {
         try {
@@ -191,7 +194,7 @@ export class ContributionAnalyzer {
             ?? (ignore as unknown as () => Ignore);
           const ig = ignoreFactory();
           ig.add(gitignoreContent.split(/\r?\n/));
-          files = files.filter(file => !ig.ignores(file.replace(/\\/g, '/')));
+          files = files.filter(file => !ig.ignores(file));
         } catch {
           // Ignore gitignore parsing errors
         }
