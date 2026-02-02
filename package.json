@@ -1,16 +1,16 @@
 {
-  "name": "ai-contrib",
+  "name": "ai-credit",
   "version": "1.0.0",
   "description": "CLI tool to track and analyze AI coding assistants' contributions in your codebase",
   "main": "dist/index.js",
   "type": "module",
   "bin": {
-    "ai-contrib": "./dist/cli.js"
+    "ai-credit": "./dist/cli.js"
   },
   "scripts": {
     "build": "tsc",
     "start": "node dist/cli.js",
-    "dev": "tsx src/cli.ts",
+    "dev": "tsc && node dist/cli.js",
     "prepublishOnly": "npm run build"
   },
   "keywords": [

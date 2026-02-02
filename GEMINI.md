@@ -1,8 +1,8 @@
-# ai-contrib Project Context
+# ai-credit Project Context
 
 ## Project Overview
 
-`ai-contrib` is a command-line interface (CLI) tool designed to track, analyze, and report on contributions made by various AI coding assistants within a software project. It scans specific log directories or files associated with tools like Claude Code, Codex CLI, Gemini CLI, and Aider to quantify their impact.
+`ai-credit` is a command-line interface (CLI) tool designed to track, analyze, and report on contributions made by various AI coding assistants within a software project. It scans specific log directories or files associated with tools like Claude Code, Codex CLI, Gemini CLI, and Aider to quantify their impact.
 
 **Key Features:**
 *   **Multi-Tool Support:** Detailed scanners for Claude Code, Codex CLI, Gemini CLI, and Aider.
