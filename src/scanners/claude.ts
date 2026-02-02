@@ -109,6 +109,7 @@ export class ClaudeScanner extends BaseScanner {
 
     const changes: FileChange[] = [];
     let sessionTimestamp: Date | null = null;
+    let sessionModel: string | undefined = undefined;
 
     for (const entry of entries) {
       // Extract timestamp from various possible fields
@@ -117,6 +118,15 @@ export class ClaudeScanner extends BaseScanner {
           sessionTimestamp = new Date(entry.timestamp);
         } else if (entry.created_at) {
           sessionTimestamp = new Date(entry.created_at);
+        }
+      }
+      
+      // Extract model (try entry.model or entry.message.model)
+      if (!sessionModel) {
+        if (entry.model) {
+          sessionModel = entry.model;
+        } else if (entry.message && entry.message.model) {
+          sessionModel = entry.message.model;
         }
       }
 
@@ -128,7 +138,7 @@ export class ClaudeScanner extends BaseScanner {
 
         for (const block of content) {
           if (block.type === 'tool_use') {
-            const change = this.parseToolUse(block, projectPath, entry.timestamp);
+            const change = this.parseToolUse(block, projectPath, entry.timestamp, sessionModel);
             if (change) {
               changes.push(change);
             }
@@ -154,13 +164,14 @@ export class ClaudeScanner extends BaseScanner {
       totalFilesChanged: new Set(changes.map(c => c.filePath)).size,
       totalLinesAdded: changes.reduce((sum, c) => sum + c.linesAdded, 0),
       totalLinesRemoved: changes.reduce((sum, c) => sum + c.linesRemoved, 0),
+      model: sessionModel,
     };
   }
 
   /**
    * Parse a tool_use block to extract file changes
    */
-  private parseToolUse(block: any, projectPath: string, timestamp?: number): FileChange | null {
+  private parseToolUse(block: any, projectPath: string, timestamp?: number, model?: string): FileChange | null {
     const toolName = block.name?.toLowerCase() || '';
     const input = block.input || {};
 
@@ -207,6 +218,7 @@ export class ClaudeScanner extends BaseScanner {
       timestamp: timestamp ? new Date(timestamp) : new Date(),
       tool: this.tool,
       content: newContent,
+      model,
     };
   }
 }

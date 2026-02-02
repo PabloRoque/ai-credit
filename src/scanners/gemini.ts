@@ -122,6 +122,17 @@ export class GeminiScanner extends BaseScanner {
       }
     }
 
+    // Extract model if available (check root or messages)
+    let sessionModel = data.model || data.defaultModel;
+    if (!sessionModel && data.messages) {
+      for (const msg of data.messages) {
+        if (msg.model) {
+          sessionModel = msg.model;
+          break;
+        }
+      }
+    }
+
     // Parse messages from various possible structures
     const messages = data.messages || data.turns || data.conversation || data.history || [];
     for (const message of messages) {
@@ -135,7 +146,7 @@ export class GeminiScanner extends BaseScanner {
         for (const part of partsArray) {
           // Check for function calls in various formats
           if (part.functionCall) {
-            const change = this.parseFunctionCall(part.functionCall, projectPath, messageTimestamp);
+            const change = this.parseFunctionCall(part.functionCall, projectPath, messageTimestamp, sessionModel);
             if (change) {
               changes.push(change);
             }
@@ -146,7 +157,7 @@ export class GeminiScanner extends BaseScanner {
             const change = this.parseFunctionCall({
               name: part.name,
               args: part.input || part.args || part.arguments
-            }, projectPath, messageTimestamp);
+            }, projectPath, messageTimestamp, sessionModel);
             if (change) {
               changes.push(change);
             }
@@ -162,7 +173,7 @@ export class GeminiScanner extends BaseScanner {
           const change = this.parseFunctionCall({
             name: func.name,
             args: typeof func.arguments === 'string' ? JSON.parse(func.arguments) : func.arguments
-          }, projectPath, messageTimestamp);
+          }, projectPath, messageTimestamp, sessionModel);
           if (change) {
             changes.push(change);
           }
@@ -176,7 +187,7 @@ export class GeminiScanner extends BaseScanner {
           const change = this.parseFunctionCall({
             name: toolCall.name,
             args: toolCall.args
-          }, projectPath, messageTimestamp);
+          }, projectPath, messageTimestamp, sessionModel);
           if (change) {
             changes.push(change);
           }
@@ -195,6 +206,7 @@ export class GeminiScanner extends BaseScanner {
       totalFilesChanged: new Set(changes.map(c => c.filePath)).size,
       totalLinesAdded: changes.reduce((sum, c) => sum + c.linesAdded, 0),
       totalLinesRemoved: changes.reduce((sum, c) => sum + c.linesRemoved, 0),
+      model: sessionModel,
     };
   }
 
@@ -217,7 +229,7 @@ export class GeminiScanner extends BaseScanner {
   /**
    * Parse a functionCall object to extract file changes
    */
-  private parseFunctionCall(funcCall: any, projectPath: string, timestamp?: Date | null): FileChange | null {
+  private parseFunctionCall(funcCall: any, projectPath: string, timestamp?: Date | null, model?: string): FileChange | null {
     if (!funcCall) return null;
     
     const funcName = (funcCall.name || '').toLowerCase();
@@ -265,6 +277,7 @@ export class GeminiScanner extends BaseScanner {
       timestamp: timestamp || new Date(),
       tool: this.tool,
       content: newContent,
+      model,
     };
   }
 }

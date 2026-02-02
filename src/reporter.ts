@@ -97,7 +97,7 @@ export class ConsoleReporter {
     console.log(chalk.bold('                🤖 Contribution by AI Tool'));
 
     const table = new Table({
-      head: ['Tool', 'Sessions', 'Files', 'Lines Added', 'Lines Removed', 'Share'].map(h => chalk.bold(h)),
+      head: ['Tool / Model', 'Sessions', 'Files', 'Lines Added', 'Lines Removed', 'Share'].map(h => chalk.bold(h)),
       style: { head: [], border: [] },
     });
 
@@ -110,6 +110,7 @@ export class ConsoleReporter {
         : '0.0';
       const color = TOOL_COLORS[tool] || chalk.white;
 
+      // Add tool row
       table.push([
         color(TOOL_NAMES[tool]),
         toolStats.sessionsCount.toString(),
@@ -118,6 +119,31 @@ export class ConsoleReporter {
         chalk.red(`-${toolStats.linesRemoved}`),
         `${share}%`,
       ]);
+
+      // Add model rows (if known and more than just "unknown" or if explicitly wanted)
+      if (toolStats.byModel.size > 0) {
+        // Sort models by lines added
+        const sortedModels = Array.from(toolStats.byModel.entries())
+          .sort((a, b) => b[1].linesAdded - a[1].linesAdded);
+
+        for (const [modelName, modelStats] of sortedModels) {
+           // Skip if model is 'unknown' and it's the only one (redundant)
+           if (modelName === 'unknown' && toolStats.byModel.size === 1) continue;
+
+           const modelShare = toolStats.linesAdded > 0
+             ? ((modelStats.linesAdded / toolStats.linesAdded) * 100).toFixed(1)
+             : '0.0';
+
+           table.push([
+             chalk.dim(`  └─ ${modelName}`),
+             chalk.dim(modelStats.sessionsCount.toString()),
+             chalk.dim(modelStats.totalFiles.toString()),
+             chalk.dim(`+${modelStats.linesAdded}`),
+             chalk.dim(`-${modelStats.linesRemoved}`),
+             chalk.dim(`${modelShare}% (of tool)`),
+           ]);
+        }
+      }
     }
 
     console.log(table.toString());

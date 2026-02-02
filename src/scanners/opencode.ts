@@ -84,11 +84,12 @@ export class OpencodeScanner extends BaseScanner {
 
     // Parse file changes from messages
     const changes: FileChange[] = [];
+    let sessionModel: string | undefined;
 
     // Try to get changes from session summary
     if (sessionData.summary?.diffs && Array.isArray(sessionData.summary.diffs)) {
       for (const diff of sessionData.summary.diffs) {
-        const change = this.parseDiff(diff, projectPath, sessionTimestamp);
+        const change = this.parseDiff(diff, projectPath, sessionTimestamp, sessionModel);
         if (change) {
           changes.push(change);
         }
@@ -106,7 +107,12 @@ export class OpencodeScanner extends BaseScanner {
           for (const msgFile of messageFiles) {
             const msgData = this.readJsonFile(path.join(sessionMessageDir, msgFile));
             if (msgData?.sessionID === sessionData.id) {
-              const msgChanges = this.parseMessageChanges(msgData, projectPath);
+              // Extract model from message
+              const msgModel = msgData.model?.modelID;
+              if (msgModel && !sessionModel) {
+                sessionModel = msgModel;
+              }
+              const msgChanges = this.parseMessageChanges(msgData, projectPath, msgModel);
               changes.push(...msgChanges);
             }
           }
@@ -121,9 +127,19 @@ export class OpencodeScanner extends BaseScanner {
     // Remove duplicate changes (same file, same content)
     const uniqueChanges = this.deduplicateChanges(changes);
 
+    // Update all changes with the session model if found
+    if (sessionModel) {
+      for (const change of uniqueChanges) {
+        if (!change.model) {
+          change.model = sessionModel;
+        }
+      }
+    }
+
     return {
       id: sessionId,
       tool: this.tool,
+      model: sessionModel,
       timestamp: sessionTimestamp,
       projectPath,
       changes: uniqueChanges,
@@ -147,7 +163,7 @@ export class OpencodeScanner extends BaseScanner {
   /**
    * Parse a diff object to extract file change
    */
-  private parseDiff(diff: any, projectPath: string, timestamp: Date): FileChange | null {
+  private parseDiff(diff: any, projectPath: string, timestamp: Date, model?: string): FileChange | null {
     if (!diff || !diff.file) return null;
 
     const filePath = this.normalizePath(diff.file, projectPath);
@@ -167,7 +183,6 @@ export class OpencodeScanner extends BaseScanner {
     const linesAdded = Math.max(0, afterLines - beforeLines);
     const linesRemoved = Math.max(0, beforeLines - afterLines);
 
-    // If we have actual content, count more accurately
     const realLinesAdded = afterContent ? this.countLines(afterContent) : 0;
     const realLinesRemoved = beforeContent ? this.countLines(beforeContent) : 0;
 
@@ -178,6 +193,7 @@ export class OpencodeScanner extends BaseScanner {
       changeType,
       timestamp,
       tool: this.tool,
+      model,
       content: afterContent,
     };
   }
@@ -185,7 +201,7 @@ export class OpencodeScanner extends BaseScanner {
   /**
    * Parse message data for file changes
    */
-  private parseMessageChanges(msgData: any, projectPath: string): FileChange[] {
+  private parseMessageChanges(msgData: any, projectPath: string, model?: string): FileChange[] {
     const changes: FileChange[] = [];
     const timestamp = msgData.time?.created
       ? new Date(msgData.time.created)
@@ -194,7 +210,7 @@ export class OpencodeScanner extends BaseScanner {
     const diffs = msgData.summary?.diffs;
     if (diffs && Array.isArray(diffs)) {
       for (const diff of diffs) {
-        const change = this.parseDiff(diff, projectPath, timestamp);
+        const change = this.parseDiff(diff, projectPath, timestamp, model);
         if (change) {
           changes.push(change);
         }

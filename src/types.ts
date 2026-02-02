@@ -20,6 +20,7 @@ export interface FileChange {
   timestamp: Date;
   tool: AITool;
   content?: string;
+  model?: string;
 }
 
 /**
@@ -34,6 +35,21 @@ export interface AISession {
   totalFilesChanged: number;
   totalLinesAdded: number;
   totalLinesRemoved: number;
+  model?: string;
+}
+
+/**
+ * Statistics for a single AI model
+ */
+export interface ModelStats {
+  model: string;
+  sessionsCount: number;
+  filesCreated: number;
+  filesModified: number;
+  totalFiles: number;
+  linesAdded: number;
+  linesRemoved: number;
+  netLines: number;
 }
 
 /**
@@ -48,6 +64,7 @@ export interface ToolStats {
   linesAdded: number;
   linesRemoved: number;
   netLines: number;
+  byModel: Map<string, ModelStats>;
 }
 
 /**

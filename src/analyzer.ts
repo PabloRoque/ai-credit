@@ -202,6 +202,8 @@ export class ContributionAnalyzer {
     const stats = new Map<AITool, ToolStats>();
     // Track unique files per tool across all sessions
     const filesByTool = new Map<AITool, Set<string>>();
+    // Track unique files per model across all sessions
+    const filesByModel = new Map<string, Set<string>>();
 
     for (const session of sessions) {
       let toolStats = stats.get(session.tool);
@@ -216,6 +218,7 @@ export class ContributionAnalyzer {
           linesAdded: 0,
           linesRemoved: 0,
           netLines: 0,
+          byModel: new Map(),
         };
         stats.set(session.tool, toolStats);
         filesByTool.set(session.tool, new Set());
@@ -234,6 +237,53 @@ export class ContributionAnalyzer {
         } else {
           toolStats.filesModified++;
         }
+
+        // Aggregate by model
+        const modelName = change.model || session.model || 'unknown';
+        let modelStats = toolStats.byModel.get(modelName);
+        if (!modelStats) {
+          modelStats = {
+            model: modelName,
+            sessionsCount: 0, // Will be counted below (approximated by session presence)
+            filesCreated: 0,
+            filesModified: 0,
+            totalFiles: 0,
+            linesAdded: 0,
+            linesRemoved: 0,
+            netLines: 0,
+          };
+          toolStats.byModel.set(modelName, modelStats);
+          filesByModel.set(`${session.tool}:${modelName}`, new Set());
+        }
+
+        const modelFiles = filesByModel.get(`${session.tool}:${modelName}`)!;
+        modelFiles.add(change.filePath);
+        modelStats.linesAdded += change.linesAdded;
+        modelStats.linesRemoved += change.linesRemoved;
+
+        if (change.changeType === 'create') {
+          modelStats.filesCreated++;
+        } else {
+          modelStats.filesModified++;
+        }
+      }
+
+      // Count sessions per model (if any change in session is attributed to model)
+      // This is a bit tricky if a session has mixed models, but usually it's one per session
+      const sessionModel = session.model || 'unknown';
+      // Use a set to track which models appeared in this session to avoid double counting if mixed
+      const modelsInSession = new Set<string>();
+      if (session.model) modelsInSession.add(session.model);
+      for (const change of session.changes) {
+        if (change.model) modelsInSession.add(change.model);
+      }
+      if (modelsInSession.size === 0) modelsInSession.add('unknown');
+
+      for (const modelName of modelsInSession) {
+         let modelStats = toolStats.byModel.get(modelName);
+         if (modelStats) {
+             modelStats.sessionsCount++;
+         }
       }
     }
 
@@ -241,6 +291,11 @@ export class ContributionAnalyzer {
     for (const [tool, toolStats] of stats) {
       toolStats.totalFiles = filesByTool.get(tool)?.size || 0;
       toolStats.netLines = toolStats.linesAdded - toolStats.linesRemoved;
+
+      for (const [modelName, modelStats] of toolStats.byModel) {
+        modelStats.totalFiles = filesByModel.get(`${tool}:${modelName}`)?.size || 0;
+        modelStats.netLines = modelStats.linesAdded - modelStats.linesRemoved;
+      }
     }
 
     return stats;
