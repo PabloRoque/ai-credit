@@ -259,7 +259,7 @@ export class ContributionAnalyzer {
       return Math.min(matched, change.linesAdded);
     }
 
-    return matched;
+    return Math.min(matched, addedLines.length);
   }
 
   /**
