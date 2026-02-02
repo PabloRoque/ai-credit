@@ -6,6 +6,7 @@ export enum AITool {
   CODEX = 'codex',
   GEMINI = 'gemini',
   AIDER = 'aider',
+  OPENCODE = 'opencode',
 }
 
 /**

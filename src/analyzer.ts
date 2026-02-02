@@ -14,6 +14,7 @@ import {
   CodexScanner,
   GeminiScanner,
   AiderScanner,
+  OpencodeScanner,
 } from './scanners/index.js';
 
 /**
@@ -30,6 +31,7 @@ export class ContributionAnalyzer {
       new CodexScanner(),
       new GeminiScanner(),
       new AiderScanner(),
+      new OpencodeScanner(),
     ];
   }
 
