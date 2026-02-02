@@ -112,6 +112,7 @@ const TOOL_MAP: Record<string, AITool> = {
   codex: AITool.CODEX,
   gemini: AITool.GEMINI,
   aider: AITool.AIDER,
+  opencode: AITool.OPENCODE,
 };
 
 const TOOL_INFO: Record<AITool, { name: string; path: string }> = {
@@ -119,6 +120,7 @@ const TOOL_INFO: Record<AITool, { name: string; path: string }> = {
   [AITool.CODEX]: { name: 'Codex CLI', path: '~/.codex/sessions/' },
   [AITool.GEMINI]: { name: 'Gemini CLI', path: '~/.gemini/tmp/' },
   [AITool.AIDER]: { name: 'Aider', path: '.aider.chat.history.md' },
+  [AITool.OPENCODE]: { name: 'Opencode', path: '~/.local/share/opencode/' },
 };
 
 /**
@@ -295,10 +297,11 @@ program
     }
 
     const toolColors: Record<AITool, typeof chalk> = {
-      [AITool.CLAUDE_CODE]: chalk.cyan,
+      [AITool.CLAUDE_CODE]: chalk.hex('#D97757'),
       [AITool.CODEX]: chalk.green,
       [AITool.GEMINI]: chalk.blue,
       [AITool.AIDER]: chalk.magenta,
+      [AITool.OPENCODE]: chalk.yellow,
     };
 
     // Show last 20 sessions
