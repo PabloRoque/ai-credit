@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { glob } from 'glob';
+import ignore, { type Ignore } from 'ignore';
 import {
   AISession,
   AITool,
@@ -154,14 +155,14 @@ export class ContributionAnalyzer {
     ];
 
     try {
-      const files = glob.sync('**/*', {
+      let files = glob.sync('**/*', {
         cwd: this.projectPath,
         nodir: true,
         ignore: ignorePatterns,
       });
 
       // Filter to only include text files
-      return files.filter(file => {
+      files = files.filter(file => {
         const ext = path.extname(file).toLowerCase();
         const textExtensions = [
           '.js', '.ts', '.jsx', '.tsx', '.mjs', '.cjs',
@@ -181,6 +182,22 @@ export class ContributionAnalyzer {
         ];
         return textExtensions.includes(ext) || !ext;
       });
+
+      const gitignorePath = path.join(this.projectPath, '.gitignore');
+      if (fs.existsSync(gitignorePath)) {
+        try {
+          const gitignoreContent = fs.readFileSync(gitignorePath, 'utf-8');
+          const ignoreFactory = (ignore as unknown as { default?: () => Ignore }).default
+            ?? (ignore as unknown as () => Ignore);
+          const ig = ignoreFactory();
+          ig.add(gitignoreContent.split(/\r?\n/));
+          files = files.filter(file => !ig.ignores(file.replace(/\\/g, '/')));
+        } catch {
+          // Ignore gitignore parsing errors
+        }
+      }
+
+      return files;
     } catch {
       return [];
     }
