@@ -110,9 +110,9 @@ export class GeminiScanner extends BaseScanner {
     }
 
     // Try to find project path from various fields
-    sessionProjectPath = data.projectPath || data.project_path || data.cwd || data.working_directory || null;
+    sessionProjectPath = this.findProjectPath(data);
 
-    // Filter by project path if available
+    // Require explicit project path match when available
     if (sessionProjectPath) {
       const normalizedSessionPath = path.resolve(sessionProjectPath);
       const normalizedProjectPath = path.resolve(projectPath);
@@ -197,6 +197,16 @@ export class GeminiScanner extends BaseScanner {
 
     if (changes.length === 0) return null;
 
+    // If no explicit project path, only keep changes that belong to the target project
+    if (!sessionProjectPath) {
+      const filteredChanges = changes.filter(change => this.isProjectFile(change.filePath, projectPath));
+      if (filteredChanges.length === 0) {
+        return null;
+      }
+      changes.length = 0;
+      changes.push(...filteredChanges);
+    }
+
     return {
       id: this.generateSessionId(filePath),
       tool: this.tool,
@@ -214,16 +224,56 @@ export class GeminiScanner extends BaseScanner {
    * Check if two paths match or are related
    */
   private pathsMatch(path1: string, path2: string): boolean {
-    // Exact match
     if (path1 === path2) return true;
-    
-    // One contains the other
-    if (path1.startsWith(path2) || path2.startsWith(path1)) return true;
-    
-    // Same basename (project name)
-    if (path.basename(path1) === path.basename(path2)) return true;
-    
+    if (path1.startsWith(path2 + path.sep)) return true;
     return false;
+  }
+
+  /**
+   * Find explicit project path from known fields in the session data
+   */
+  private findProjectPath(data: any): string | null {
+    if (!data || typeof data !== 'object') return null;
+
+    const keys = new Set([
+      'projectPath',
+      'project_path',
+      'cwd',
+      'working_directory',
+      'workspace',
+      'workspacePath',
+      'rootPath',
+      'repoPath',
+    ]);
+
+    const queue: Array<{ value: any; depth: number }> = [{ value: data, depth: 0 }];
+    const maxDepth = 6;
+
+    while (queue.length > 0) {
+      const current = queue.shift();
+      if (!current) break;
+      const { value, depth } = current;
+      if (!value || typeof value !== 'object') continue;
+      if (depth > maxDepth) continue;
+
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          queue.push({ value: item, depth: depth + 1 });
+        }
+        continue;
+      }
+
+      for (const [key, val] of Object.entries(value)) {
+        if (keys.has(key) && typeof val === 'string' && path.isAbsolute(val)) {
+          return val;
+        }
+        if (val && typeof val === 'object') {
+          queue.push({ value: val, depth: depth + 1 });
+        }
+      }
+    }
+
+    return null;
   }
 
   /**

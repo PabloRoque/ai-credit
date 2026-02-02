@@ -91,6 +91,7 @@ export class ConsoleReporter {
   private printToolBreakdown(stats: ContributionStats): void {
     if (stats.byTool.size === 0) {
       console.log(chalk.yellow('No AI contributions found.'));
+      console.log();
       return;
     }
 

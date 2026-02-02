@@ -91,9 +91,20 @@ export class ContributionAnalyzer {
     const repoFileIndex = this.buildRepoFileIndex(repoFiles);
     const totalLines = this.sumRepoLines(repoFileIndex);
 
+    // Filter sessions to those with verified contributions
+    const verifiedSessions = sessions.filter(session => {
+      for (const change of session.changes) {
+        const fileInfo = repoFileIndex.get(change.filePath);
+        if (this.countVerifiedAddedLines(change, fileInfo) > 0) {
+          return true;
+        }
+      }
+      return false;
+    });
+
     // Compute statistics
-    const byTool = this.computeToolStats(sessions, repoFileIndex);
-    const byFile = this.computeFileStats(sessions, repoFileIndex);
+    const byTool = this.computeToolStats(verifiedSessions, repoFileIndex);
+    const byFile = this.computeFileStats(verifiedSessions, repoFileIndex);
 
     // Count AI-touched files and lines (only count files that exist in repo)
     let aiTouchedFiles = 0;
@@ -115,7 +126,7 @@ export class ContributionAnalyzer {
       totalLines,
       aiTouchedFiles,
       aiContributedLines,
-      sessions,
+      sessions: verifiedSessions,
       byTool,
       byFile,
     };
@@ -263,6 +274,20 @@ export class ContributionAnalyzer {
     const filesByModel = new Map<string, Set<string>>();
 
     for (const session of sessions) {
+      const sessionContribs: Array<{ change: FileChange; verifiedAdded: number; modelName: string }> = [];
+
+      for (const change of session.changes) {
+        const fileInfo = repoFileIndex.get(change.filePath);
+        const verifiedAdded = this.countVerifiedAddedLines(change, fileInfo);
+        if (verifiedAdded <= 0) continue;
+        const modelName = change.model || session.model || 'unknown';
+        sessionContribs.push({ change, verifiedAdded, modelName });
+      }
+
+      if (sessionContribs.length === 0) {
+        continue;
+      }
+
       let toolStats = stats.get(session.tool);
       
       if (!toolStats) {
@@ -282,12 +307,12 @@ export class ContributionAnalyzer {
       }
 
       toolStats.sessionsCount++;
-      
+
       const toolFiles = filesByTool.get(session.tool)!;
-      for (const change of session.changes) {
+      const modelsInSession = new Set<string>();
+
+      for (const { change, verifiedAdded, modelName } of sessionContribs) {
         toolFiles.add(change.filePath);
-        const fileInfo = repoFileIndex.get(change.filePath);
-        const verifiedAdded = this.countVerifiedAddedLines(change, fileInfo);
         toolStats.linesAdded += verifiedAdded;
         toolStats.linesRemoved += change.linesRemoved;
         
@@ -297,13 +322,14 @@ export class ContributionAnalyzer {
           toolStats.filesModified++;
         }
 
+        modelsInSession.add(modelName);
+
         // Aggregate by model
-        const modelName = change.model || session.model || 'unknown';
         let modelStats = toolStats.byModel.get(modelName);
         if (!modelStats) {
           modelStats = {
             model: modelName,
-            sessionsCount: 0, // Will be counted below (approximated by session presence)
+            sessionsCount: 0, // Will be counted below
             filesCreated: 0,
             filesModified: 0,
             totalFiles: 0,
@@ -327,22 +353,11 @@ export class ContributionAnalyzer {
         }
       }
 
-      // Count sessions per model (if any change in session is attributed to model)
-      // This is a bit tricky if a session has mixed models, but usually it's one per session
-      const sessionModel = session.model || 'unknown';
-      // Use a set to track which models appeared in this session to avoid double counting if mixed
-      const modelsInSession = new Set<string>();
-      if (session.model) modelsInSession.add(session.model);
-      for (const change of session.changes) {
-        if (change.model) modelsInSession.add(change.model);
-      }
-      if (modelsInSession.size === 0) modelsInSession.add('unknown');
-
       for (const modelName of modelsInSession) {
-         let modelStats = toolStats.byModel.get(modelName);
-         if (modelStats) {
-             modelStats.sessionsCount++;
-         }
+        const modelStats = toolStats.byModel.get(modelName);
+        if (modelStats) {
+          modelStats.sessionsCount++;
+        }
       }
     }
 
