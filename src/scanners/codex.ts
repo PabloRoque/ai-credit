@@ -60,6 +60,7 @@ export class CodexScanner extends BaseScanner {
     const changes: FileChange[] = [];
     let sessionTimestamp: Date | null = null;
     let sessionProjectPath: string | null = null;
+    let sessionModel: string | undefined;
 
     for (const entry of entries) {
       const payload = entry.payload || {};
@@ -75,6 +76,19 @@ export class CodexScanner extends BaseScanner {
           sessionProjectPath = payload.cwd;
         } else if (entry.type === 'session_meta' && payload.cwd) {
           sessionProjectPath = payload.cwd;
+        }
+      }
+
+      // Extract model if available (turn_context/session_meta often include it)
+      if (!sessionModel) {
+        const rawModel = payload.model || payload.model_id || payload.modelId || payload.modelName;
+        if (typeof rawModel === 'string' && rawModel) {
+          sessionModel = rawModel;
+        } else if (rawModel && typeof rawModel === 'object') {
+          const modelName = rawModel.name || rawModel.id || rawModel.model;
+          if (typeof modelName === 'string' && modelName) {
+            sessionModel = modelName;
+          }
         }
       }
 
@@ -145,6 +159,7 @@ export class CodexScanner extends BaseScanner {
       totalFilesChanged: new Set(changes.map(c => c.filePath)).size,
       totalLinesAdded: changes.reduce((sum, c) => sum + c.linesAdded, 0),
       totalLinesRemoved: changes.reduce((sum, c) => sum + c.linesRemoved, 0),
+      model: sessionModel,
     };
   }
 
