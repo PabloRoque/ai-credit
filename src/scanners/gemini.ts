@@ -126,14 +126,16 @@ export class GeminiScanner extends BaseScanner {
     const messages = data.messages || data.turns || data.conversation || data.history || [];
     for (const message of messages) {
       // Check for assistant/model role
-      if (message.role === 'assistant' || message.role === 'model' || message.role === 'ASSISTANT') {
+      const role = message.role || message.type;
+      if (['assistant', 'model', 'ASSISTANT', 'gemini'].includes(role)) {
+        const messageTimestamp = message.timestamp ? new Date(message.timestamp) : sessionTimestamp;
         const parts = message.parts || message.content || message.text || [];
         const partsArray = Array.isArray(parts) ? parts : [parts];
         
         for (const part of partsArray) {
           // Check for function calls in various formats
           if (part.functionCall) {
-            const change = this.parseFunctionCall(part.functionCall, projectPath, sessionTimestamp);
+            const change = this.parseFunctionCall(part.functionCall, projectPath, messageTimestamp);
             if (change) {
               changes.push(change);
             }
@@ -144,7 +146,7 @@ export class GeminiScanner extends BaseScanner {
             const change = this.parseFunctionCall({
               name: part.name,
               args: part.input || part.args || part.arguments
-            }, projectPath, sessionTimestamp);
+            }, projectPath, messageTimestamp);
             if (change) {
               changes.push(change);
             }
@@ -152,14 +154,29 @@ export class GeminiScanner extends BaseScanner {
         }
       }
       
-      // Also check for tool_calls array format
+      // Also check for tool_calls array format (snake_case)
       if (message.tool_calls && Array.isArray(message.tool_calls)) {
+        const messageTimestamp = message.timestamp ? new Date(message.timestamp) : sessionTimestamp;
         for (const toolCall of message.tool_calls) {
           const func = toolCall.function || toolCall;
           const change = this.parseFunctionCall({
             name: func.name,
             args: typeof func.arguments === 'string' ? JSON.parse(func.arguments) : func.arguments
-          }, projectPath, sessionTimestamp);
+          }, projectPath, messageTimestamp);
+          if (change) {
+            changes.push(change);
+          }
+        }
+      }
+
+      // Check for toolCalls array format (camelCase - common in some Gemini versions)
+      if (message.toolCalls && Array.isArray(message.toolCalls)) {
+        const messageTimestamp = message.timestamp ? new Date(message.timestamp) : sessionTimestamp;
+        for (const toolCall of message.toolCalls) {
+          const change = this.parseFunctionCall({
+            name: toolCall.name,
+            args: toolCall.args
+          }, projectPath, messageTimestamp);
           if (change) {
             changes.push(change);
           }
@@ -208,12 +225,12 @@ export class GeminiScanner extends BaseScanner {
 
     // Supported operations - expanded list
     const writeOps = ['write_file', 'create_file', 'write', 'save_file', 'create', 'writefile'];
-    const editOps = ['edit_file', 'update_file', 'modify_file', 'replace_in_file', 'edit', 'patch', 'apply_diff'];
+    const editOps = ['edit_file', 'update_file', 'modify_file', 'replace_in_file', 'edit', 'patch', 'apply_diff', 'replace'];
 
     // Try various field names for file path
     let filePath = args.path || args.file_path || args.filename || args.file || args.target || '';
-    let newContent = args.content || args.newContent || args.text || args.code || args.data || '';
-    let oldContent = args.oldContent || args.original || args.old_content || '';
+    let newContent = args.content || args.newContent || args.text || args.code || args.data || args.new_string || args.new_str || '';
+    let oldContent = args.oldContent || args.original || args.old_content || args.old_string || args.old_str || '';
 
     if (!filePath) return null;
 
