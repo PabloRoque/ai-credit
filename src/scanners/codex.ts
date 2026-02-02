@@ -149,12 +149,13 @@ export class CodexScanner extends BaseScanner {
   }
 
   /**
-   * Check if two paths match or are related
+   * Check if the session path belongs to the target project.
+   * The session cwd must be exactly the project path or a subdirectory of it.
    */
-  private pathsMatch(path1: string, path2: string): boolean {
-    if (path1 === path2) return true;
-    if (path1.startsWith(path2) || path2.startsWith(path1)) return true;
-    if (path.basename(path1) === path.basename(path2)) return true;
+  private pathsMatch(sessionPath: string, projectPath: string): boolean {
+    if (sessionPath === projectPath) return true;
+    // Session opened inside a subdirectory of the project
+    if (sessionPath.startsWith(projectPath + '/')) return true;
     return false;
   }
 

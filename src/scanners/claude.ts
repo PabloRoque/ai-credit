@@ -170,8 +170,8 @@ export class ClaudeScanner extends BaseScanner {
 
     // Try various field names for file path
     let filePath = input.path || input.file_path || input.filename || input.file || input.target || '';
-    let newContent = input.content || input.new_str || input.text || input.code || '';
-    let oldContent = input.old_str || input.old_content || input.original || '';
+    let newContent = input.content || input.new_str || input.new_string || input.text || input.code || '';
+    let oldContent = input.old_str || input.old_string || input.old_content || input.original || '';
 
     if (!filePath) return null;
 
