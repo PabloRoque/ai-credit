@@ -89,7 +89,18 @@ export class ContributionAnalyzer {
     
     // Get repository file stats
     const repoFiles = this.getRepoFiles();
-    const repoFileIndex = this.buildRepoFileIndex(repoFiles);
+    const repoFileSet = new Set(repoFiles);
+    const filesNeedingLineSet = new Set<string>();
+
+    for (const session of sessions) {
+      for (const change of session.changes) {
+        if (repoFileSet.has(change.filePath)) {
+          filesNeedingLineSet.add(change.filePath);
+        }
+      }
+    }
+
+    const repoFileIndex = this.buildRepoFileIndex(repoFiles, filesNeedingLineSet);
     const totalLines = this.sumRepoLines(repoFileIndex);
 
     // Filter sessions to those with verified contributions
@@ -209,19 +220,30 @@ export class ContributionAnalyzer {
   /**
    * Build a file index for verification and totals
    */
-  private buildRepoFileIndex(files: string[]): Map<string, RepoFileInfo> {
+  private buildRepoFileIndex(files: string[], filesNeedingLineSet?: Set<string>): Map<string, RepoFileInfo> {
     const index = new Map<string, RepoFileInfo>();
+    const emptyLineSet = new Set<string>();
 
     for (const file of files) {
       try {
         const content = fs.readFileSync(path.join(this.projectPath, file), 'utf-8');
-        const totalLines = content.split('\n').length;
         const normalizedLines = content.split(/\r?\n/);
-        const nonEmptyLines = normalizedLines.filter(line => line.length > 0).length;
-        const lineSet = new Set(normalizedLines.filter(line => line.length > 0));
+        const totalLines = normalizedLines.length;
+        let nonEmptyLines = 0;
+        const buildLineSet = filesNeedingLineSet?.has(file) ?? false;
+        const lineSet = buildLineSet ? new Set<string>() : emptyLineSet;
+
+        for (const line of normalizedLines) {
+          if (line.length === 0) continue;
+          nonEmptyLines++;
+          if (buildLineSet) {
+            lineSet.add(line);
+          }
+        }
+
         index.set(file, { totalLines, nonEmptyLines, lineSet });
       } catch {
-        index.set(file, { totalLines: 0, nonEmptyLines: 0, lineSet: new Set() });
+        index.set(file, { totalLines: 0, nonEmptyLines: 0, lineSet: emptyLineSet });
       }
     }
 

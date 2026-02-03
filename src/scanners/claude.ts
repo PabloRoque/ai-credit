@@ -118,14 +118,13 @@ export class ClaudeScanner extends BaseScanner {
   }
 
   parseSessionFile(filePath: string, projectPath: string): AISession | null {
-    const entries = this.readJsonlFile(filePath);
-    if (entries.length === 0) return null;
-
     const changes: FileChange[] = [];
     let sessionTimestamp: Date | null = null;
     let sessionModel: string | undefined = undefined;
+    let hasEntries = false;
 
-    for (const entry of entries) {
+    this.forEachJsonlEntry(filePath, entry => {
+      hasEntries = true;
       // Extract timestamp from various possible fields
       if (!sessionTimestamp) {
         if (entry.timestamp) {
@@ -165,9 +164,9 @@ export class ClaudeScanner extends BaseScanner {
         // Tool results might indicate successful file operations
         // but we primarily track from tool_use
       }
-    }
+    });
 
-    if (changes.length === 0) return null;
+    if (!hasEntries || changes.length === 0) return null;
 
     return {
       id: this.generateSessionId(filePath),

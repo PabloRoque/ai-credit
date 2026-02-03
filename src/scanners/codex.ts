@@ -54,15 +54,14 @@ export class CodexScanner extends BaseScanner {
   }
 
   parseSessionFile(filePath: string, projectPath: string): AISession | null {
-    const entries = this.readJsonlFile(filePath);
-    if (entries.length === 0) return null;
-
     const changes: FileChange[] = [];
     let sessionTimestamp: Date | null = null;
     let sessionProjectPath: string | null = null;
     let sessionModel: string | undefined;
+    let hasEntries = false;
 
-    for (const entry of entries) {
+    this.forEachJsonlEntry(filePath, entry => {
+      hasEntries = true;
       const payload = entry.payload || {};
 
       // Extract timestamp
@@ -96,7 +95,7 @@ export class CodexScanner extends BaseScanner {
       if (entry.type === 'response_item' && payload.type === 'custom_tool_call') {
         const patchChanges = this.parseApplyPatch(payload, projectPath, sessionProjectPath, entry.timestamp);
         changes.push(...patchChanges);
-        continue;
+        return;
       }
 
       // Handle function_call (shell_command with file writes)
@@ -108,14 +107,14 @@ export class CodexScanner extends BaseScanner {
             ? JSON.parse(payload.arguments)
             : payload.arguments || {};
         } catch {
-          continue;
+          return;
         }
 
         const change = this.parseFunctionCall(funcName, args, projectPath, sessionProjectPath, entry.timestamp);
         if (change) {
           changes.push(change);
         }
-        continue;
+        return;
       }
 
       // Legacy format: top-level tool_calls / function_calls arrays
@@ -136,7 +135,7 @@ export class CodexScanner extends BaseScanner {
           changes.push(change);
         }
       }
-    }
+    });
 
     // Filter: only include sessions that match the project path
     if (sessionProjectPath) {
@@ -150,7 +149,7 @@ export class CodexScanner extends BaseScanner {
       }
     }
 
-    if (changes.length === 0) return null;
+    if (!hasEntries || changes.length === 0) return null;
 
     return {
       id: this.generateSessionId(filePath),

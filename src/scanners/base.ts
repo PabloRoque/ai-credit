@@ -231,6 +231,57 @@ export abstract class BaseScanner {
   }
 
   /**
+   * Iterate JSONL entries without loading the full file into memory
+   */
+  protected forEachJsonlEntry(filePath: string, onEntry: (entry: any) => void): void {
+    const bufferSize = 64 * 1024;
+    const buffer = Buffer.alloc(bufferSize);
+    let fd: number | null = null;
+    let leftover = '';
+
+    try {
+      fd = fs.openSync(filePath, 'r');
+      while (true) {
+        const bytesRead = fs.readSync(fd, buffer, 0, bufferSize, null);
+        if (bytesRead <= 0) break;
+
+        const chunk = buffer.toString('utf8', 0, bytesRead);
+        const lines = (leftover + chunk).split(/\r?\n/);
+        leftover = lines.pop() ?? '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          try {
+            onEntry(JSON.parse(trimmed));
+          } catch {
+            // Skip malformed JSON lines
+          }
+        }
+      }
+
+      const tail = leftover.trim();
+      if (tail) {
+        try {
+          onEntry(JSON.parse(tail));
+        } catch {
+          // Skip malformed tail
+        }
+      }
+    } catch {
+      // Ignore file read errors
+    } finally {
+      if (fd !== null) {
+        try {
+          fs.closeSync(fd);
+        } catch {
+          // Ignore close errors
+        }
+      }
+    }
+  }
+
+  /**
    * Generate a unique session ID
    */
   protected generateSessionId(filePath: string): string {
