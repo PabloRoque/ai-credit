@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import * as stringDecoder from 'string_decoder';
 import { AISession, AITool, FileChange } from '../types.js';
 
 /**
@@ -238,6 +239,7 @@ export abstract class BaseScanner {
     const buffer = Buffer.alloc(bufferSize);
     let fd: number | null = null;
     let leftover = '';
+    const decoder = new stringDecoder.StringDecoder('utf8');
 
     try {
       fd = fs.openSync(filePath, 'r');
@@ -245,7 +247,7 @@ export abstract class BaseScanner {
         const bytesRead = fs.readSync(fd, buffer, 0, bufferSize, null);
         if (bytesRead <= 0) break;
 
-        const chunk = buffer.toString('utf8', 0, bytesRead);
+        const chunk = decoder.write(buffer.subarray(0, bytesRead));
         const lines = (leftover + chunk).split(/\r?\n/);
         leftover = lines.pop() ?? '';
 
@@ -260,7 +262,7 @@ export abstract class BaseScanner {
         }
       }
 
-      const tail = leftover.trim();
+      const tail = (leftover + decoder.end()).trim();
       if (tail) {
         try {
           onEntry(JSON.parse(tail));

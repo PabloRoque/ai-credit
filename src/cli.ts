@@ -4,6 +4,7 @@ import chalk from 'chalk'
 import { Command } from 'commander'
 import * as fs from 'fs'
 import * as path from 'path'
+import * as readline from 'readline'
 import { fileURLToPath } from 'url'
 import { Worker, isMainThread, parentPort, workerData } from 'worker_threads'
 import { ContributionAnalyzer } from './analyzer.js'
@@ -14,7 +15,21 @@ import { AITool, OutputFormat } from './types.js'
 if (!isMainThread) {
   const { projectPath, tools } = workerData;
   const analyzer = new ContributionAnalyzer(projectPath);
-  const stats = analyzer.analyze(tools);
+  let lastProgressSent = 0;
+  let pendingPath: string | null = null;
+  const sendProgress = (filePath: string) => {
+    const now = Date.now();
+    if (now - lastProgressSent < 50) {
+      pendingPath = filePath;
+      return;
+    }
+    const nextPath = pendingPath ?? filePath;
+    pendingPath = null;
+    lastProgressSent = now;
+    parentPort!.postMessage({ type: 'progress', path: nextPath });
+  };
+
+  const stats = analyzer.analyze(tools, sendProgress);
   // ContributionStats contains Maps which can't be transferred directly
   // Serialize to JSON-safe format
   parentPort!.postMessage(JSON.stringify(stats, (_key, value) => {
@@ -27,12 +42,22 @@ if (!isMainThread) {
 /**
  * Run analyzer in a worker thread to keep the main thread free for spinner animation
  */
-function analyzeInWorker(projectPath: string, tools?: AITool[]): Promise<any> {
+function analyzeInWorker(
+  projectPath: string,
+  tools?: AITool[],
+  onProgress?: (filePath: string) => void
+): Promise<any> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(fileURLToPath(import.meta.url), {
       workerData: { projectPath, tools },
     });
-    worker.on('message', (msg: string) => {
+    worker.on('message', (msg: any) => {
+      if (msg && typeof msg === 'object' && msg.type === 'progress') {
+        if (onProgress && typeof msg.path === 'string') {
+          onProgress(msg.path);
+        }
+        return;
+      }
       const parsed = JSON.parse(msg, (_key, value) => {
         if (value && value.__type === 'Map') return new Map(value.entries);
         return value;
@@ -88,19 +113,70 @@ function hsvToRgb(h: number, s: number, v: number): [number, number, number] {
 
 function startRainbowLoading(text: string) {
   let frame = 0;
+  let displayText = text;
+  let secondaryText = '';
+  const supportsCursor = process.stderr.isTTY === true;
+
+  const fitToWidth = (input: string): string => {
+    const columns = typeof process.stderr.columns === 'number' ? process.stderr.columns : 80;
+    const maxWidth = Math.max(1, columns - 1);
+    if (input.length <= maxWidth) return input;
+    if (maxWidth <= 1) return input.slice(0, maxWidth);
+    return `…${input.slice(input.length - (maxWidth - 1))}`;
+  };
+
+  const render = () => {
+    if (!supportsCursor) return;
+    const primary = fitToWidth(displayText);
+    const secondary = fitToWidth(secondaryText);
+    readline.moveCursor(process.stderr, 0, -1);
+    readline.clearLine(process.stderr, 0);
+    readline.cursorTo(process.stderr, 0);
+    process.stderr.write(rainbowText(primary, frame));
+    readline.moveCursor(process.stderr, 0, 1);
+    readline.clearLine(process.stderr, 0);
+    readline.cursorTo(process.stderr, 0);
+    process.stderr.write(chalk.white(secondary));
+  };
+
   process.stderr.write('\u001B[?25l'); // hide cursor
+  if (supportsCursor) {
+    process.stderr.write(`${rainbowText(fitToWidth(displayText), frame)}\n`);
+    process.stderr.write(chalk.white(fitToWidth(secondaryText)));
+  } else {
+    process.stderr.write(`${displayText}\n`);
+  }
   const interval = setInterval(() => {
-    process.stderr.write(`\r${rainbowText(text, frame)}`);
+    if (!supportsCursor) {
+      frame++;
+      return;
+    }
+    render();
     frame++;
   }, 15);
   return {
+    updateSecondary(nextText: string) {
+      secondaryText = nextText;
+      render();
+    },
     stop() {
       clearInterval(interval);
-      process.stderr.write(`\r${' '.repeat(text.length)}\r`);
+      if (supportsCursor) {
+        readline.clearLine(process.stderr, 0);
+        readline.moveCursor(process.stderr, 0, -1);
+        readline.clearLine(process.stderr, 0);
+        readline.moveCursor(process.stderr, 0, 1);
+      }
       process.stderr.write('\u001B[?25h'); // show cursor
     },
     fail(msg: string) {
       clearInterval(interval);
+      if (supportsCursor) {
+        readline.clearLine(process.stderr, 0);
+        readline.moveCursor(process.stderr, 0, -1);
+        readline.clearLine(process.stderr, 0);
+        readline.moveCursor(process.stderr, 0, 1);
+      }
       process.stderr.write(`\r${chalk.red('✖')} ${msg}\n`);
       process.stderr.write('\u001B[?25h');
     },
@@ -163,11 +239,14 @@ program
       process.exit(1);
     }
 
-    const spinner = startRainbowLoading('Analyzing repository...');
+    const baseText = 'Analyzing repository...';
+    const spinner = startRainbowLoading(baseText);
 
     try {
       const tools = parseTools(options.tools);
-      const stats = await analyzeInWorker(resolvedPath, tools);
+      const stats = await analyzeInWorker(resolvedPath, tools, (filePath) => {
+        spinner.updateSecondary(filePath);
+      });
 
       spinner.stop();
 
@@ -236,10 +315,13 @@ program
   .option('-n, --limit <number>', 'Number of files to show', '20')
   .action(async (repoPath: string = '.', options) => {
     const resolvedPath = path.resolve(repoPath);
-    const spinner = startRainbowLoading('Analyzing files...');
+    const baseText = 'Analyzing files...';
+    const spinner = startRainbowLoading(baseText);
 
     try {
-      const stats = await analyzeInWorker(resolvedPath);
+      const stats = await analyzeInWorker(resolvedPath, undefined, (filePath) => {
+        spinner.updateSecondary(filePath);
+      });
       spinner.stop();
 
       const reporter = new ConsoleReporter();
@@ -258,10 +340,13 @@ program
   .option('-n, --limit <number>', 'Number of entries to show', '20')
   .action(async (repoPath: string = '.', options) => {
     const resolvedPath = path.resolve(repoPath);
-    const spinner = startRainbowLoading('Loading history...');
+    const baseText = 'Loading history...';
+    const spinner = startRainbowLoading(baseText);
 
     try {
-      const stats = await analyzeInWorker(resolvedPath);
+      const stats = await analyzeInWorker(resolvedPath, undefined, (filePath) => {
+        spinner.updateSecondary(filePath);
+      });
       spinner.stop();
 
       const reporter = new ConsoleReporter();
@@ -343,11 +428,14 @@ program
       process.exit(1);
     }
 
-    const spinner = startRainbowLoading('Analyzing repository...');
+    const baseText = 'Analyzing repository...';
+    const spinner = startRainbowLoading(baseText);
 
     try {
       const tools = parseTools(options.tools);
-      const stats = await analyzeInWorker(resolvedPath, tools);
+      const stats = await analyzeInWorker(resolvedPath, tools, (filePath) => {
+        spinner.updateSecondary(filePath);
+      });
 
       spinner.stop();
 

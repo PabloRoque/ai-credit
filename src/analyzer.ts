@@ -84,7 +84,7 @@ export class ContributionAnalyzer {
   /**
    * Analyze the repository and compute contribution statistics
    */
-  analyze(tools?: AITool[]): ContributionStats {
+  analyze(tools?: AITool[], onProgress?: (filePath: string) => void): ContributionStats {
     const sessions = this.scanAllSessions(tools);
     
     // Get repository file stats
@@ -100,7 +100,7 @@ export class ContributionAnalyzer {
       }
     }
 
-    const repoFileIndex = this.buildRepoFileIndex(repoFiles, filesNeedingLineSet);
+    const repoFileIndex = this.buildRepoFileIndex(repoFiles, filesNeedingLineSet, onProgress);
     const totalLines = this.sumRepoLines(repoFileIndex);
 
     // Filter sessions to those with verified contributions
@@ -220,11 +220,18 @@ export class ContributionAnalyzer {
   /**
    * Build a file index for verification and totals
    */
-  private buildRepoFileIndex(files: string[], filesNeedingLineSet?: Set<string>): Map<string, RepoFileInfo> {
+  private buildRepoFileIndex(
+    files: string[],
+    filesNeedingLineSet?: Set<string>,
+    onProgress?: (filePath: string) => void
+  ): Map<string, RepoFileInfo> {
     const index = new Map<string, RepoFileInfo>();
     const emptyLineSet = new Set<string>();
 
     for (const file of files) {
+      if (onProgress) {
+        onProgress(this.formatDisplayPath(file));
+      }
       try {
         const content = fs.readFileSync(path.join(this.projectPath, file), 'utf-8');
         const normalizedLines = content.split(/\r?\n/);
@@ -248,6 +255,15 @@ export class ContributionAnalyzer {
     }
 
     return index;
+  }
+
+  /**
+   * Format a repo-relative path for display (include repo name).
+   */
+  private formatDisplayPath(repoRelativePath: string): string {
+    const fullPath = path.join(this.projectPath, repoRelativePath);
+    const displayPath = path.relative(path.dirname(this.projectPath), fullPath);
+    return displayPath.replace(/\\/g, '/');
   }
 
   /**
