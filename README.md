@@ -3,7 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/ai-credit.svg)](https://www.npmjs.com/package/ai-credit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A command-line tool to track and analyze AI coding assistants' contributions in your codebase (macOS/Linux/Windows). Supports **Claude Code**, **Codex CLI**, **Gemini CLI**, and **Opencode**.
+A command-line tool to track and analyze AI coding assistants' contributions in your codebase (macOS/Linux/Windows). Supports **Claude Code**, **Codex CLI**, **Cursor**, **Gemini CLI**, and **Opencode**.
 
 <img width="700" height="700" alt="image" src="https://github.com/user-attachments/assets/48545b91-8d20-4946-bc1c-f55762c01539" />
 
@@ -22,7 +22,7 @@ ai-credit
 
 - 🔍 **Auto-detection**: Automatically finds AI tool session data on your system (macOS/Linux/Windows)
 - 📊 **Detailed Statistics**: Lines of code, files modified, contribution ratios
-- 🤖 **Multi-tool Support**: Claude Code, Codex CLI, Gemini CLI, Opencode
+- 🤖 **Multi-tool Support**: Claude Code, Codex CLI, Cursor, Gemini CLI, Opencode
 - 📈 **Visual Reports**: Console, JSON, and Markdown output formats
 - 📅 **Timeline View**: Track AI contributions over time
 - 📁 **File-level Analysis**: See which files have the most AI contributions
@@ -56,7 +56,7 @@ npx ai-credit [path]
 # Options:
 #   -f, --format    Output format (console/json/markdown)
 #   -o, --output    Output file path
-#   -t, --tools     AI tools to analyze (claude,codex,gemini,opencode,all)
+#   -t, --tools     AI tools to analyze (claude,codex,cursor,gemini,opencode,all)
 #   -v, --verbose   Show detailed output
 ```
 
@@ -73,6 +73,7 @@ Shows which AI tools have data available on your system:
 
   Claude Code     ~/.claude/projects/              ✓ Available
   Codex CLI       ~/.codex/sessions/               ✓ Available
+  Cursor          Cursor/User/workspaceStorage     ✓ Available
   Gemini CLI      ~/.gemini/tmp/                   ✗ Not found
   Opencode        ~/.local/share/opencode/         ✓ Available
 ```
@@ -163,6 +164,7 @@ Leave a 🌟 star if you like it: https://github.com/debugtheworldbot/ai-credit
 |------|------------------|--------|
 | Claude Code | `~/.claude/projects/<path>/` | JSONL |
 | Codex CLI | `~/.codex/sessions/YYYY/MM/DD/` | JSONL |
+| Cursor | `~/Library/Application Support/Cursor/User/workspaceStorage` | SQLite (`state.vscdb`) |
 | Gemini CLI | `~/.gemini/tmp/<hash>/chats/` | JSON |
 | Opencode | `~/.local/share/opencode/` | JSON |
 
@@ -239,7 +241,41 @@ Here's a detailed breakdown of the parsing method for each supported tool:
 }
 ```
 
-### 3. Gemini CLI
+### 3. Cursor
+
+-   **File Format**: SQLite (`state.vscdb`).
+-   **Scan Paths**:
+    -   Workspace metadata: `~/Library/Application Support/Cursor/User/workspaceStorage/<id>/state.vscdb`
+    -   Global content: `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb`
+-   **Parsing Logic**:
+    1.  Match Cursor workspaces to the target repo using `workspace.json`.
+    2.  Read `composer.composerData` to get composer IDs tied to that workspace.
+    3.  Load `composerData:<composerId>` from the global DB.
+    4.  For each file, read `codeBlockDiff:<composerId>:<diffId>` and aggregate diff segments.
+    5.  Fallback to original/current file contents when diffs are unavailable.
+
+-   **Contribution Calculation**:
+    -   **Lines Added/Removed**: Derived from `codeBlockDiff` segments; fallback uses diff against current file contents.
+
+**Note:** The Cursor scanner relies on the `sqlite3` CLI being available.
+
+**Example (Simplified Cursor codeBlockDiff JSON):**
+
+```json
+{
+  "newModelDiffWrtV0": [
+    {
+      "original": { "startLineNumber": 10, "endLineNumberExclusive": 12 },
+      "modified": [
+        "const enabled = true;",
+        "console.log('cursor');"
+      ]
+    }
+  ]
+}
+```
+
+### 4. Gemini CLI
 
 -   **File Format**: JSON (`.json`), where one file represents a complete session.
 -   **Scan Paths**: `~/.gemini/tmp/<hash>/chats/*.json`, `~/.gemini/history/*.json`, `~/.gemini/sessions/*.json`
@@ -276,7 +312,7 @@ Here's a detailed breakdown of the parsing method for each supported tool:
 }
 ```
 
-### 4. Opencode
+### 5. Opencode
 
 -   **File Format**: JSON (`.json`) session and message files.
 -   **Scan Paths**:

@@ -14,6 +14,7 @@ import {
   BaseScanner,
   ClaudeScanner,
   CodexScanner,
+  CursorScanner,
   GeminiScanner,
   OpencodeScanner,
 } from './scanners/index.js';
@@ -36,6 +37,7 @@ export class ContributionAnalyzer {
     this.scanners = [
       new ClaudeScanner(),
       new CodexScanner(),
+      new CursorScanner(),
       new GeminiScanner(),
       new OpencodeScanner(),
     ];

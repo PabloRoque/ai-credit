@@ -83,3 +83,7 @@ import { AISession } from '../types.js';
 - One scanner per AI tool in `src/scanners/`
 - Re-export all scanners from `src/scanners/index.ts`
 - Keep classes focused on single responsibility
+
+## Agent Run Log
+
+- 2026-02-03 16:59:44 local: ran `pnpm dev` (tsc + `node dist/cli.js`) successfully. Cursor detected with 2 sessions; overall summary showed 19 files, 4501 lines, 14 AI sessions.

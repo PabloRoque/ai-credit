@@ -186,6 +186,7 @@ function startRainbowLoading(text: string) {
 const TOOL_MAP: Record<string, AITool> = {
   claude: AITool.CLAUDE_CODE,
   codex: AITool.CODEX,
+  cursor: AITool.CURSOR,
   gemini: AITool.GEMINI,
   opencode: AITool.OPENCODE,
 };
@@ -193,6 +194,7 @@ const TOOL_MAP: Record<string, AITool> = {
 const TOOL_INFO: Record<AITool, { name: string; path: string }> = {
   [AITool.CLAUDE_CODE]: { name: 'Claude Code', path: '~/.claude/projects/' },
   [AITool.CODEX]: { name: 'Codex CLI', path: '~/.codex/sessions/' },
+  [AITool.CURSOR]: { name: 'Cursor', path: 'Cursor/User/workspaceStorage' },
   [AITool.GEMINI]: { name: 'Gemini CLI', path: '~/.gemini/tmp/' },
   [AITool.OPENCODE]: { name: 'Opencode', path: '~/.local/share/opencode/' },
 };
@@ -382,6 +384,7 @@ program
     const toolColors: Record<AITool, typeof chalk> = {
       [AITool.CLAUDE_CODE]: chalk.hex('#D97757'),
       [AITool.CODEX]: chalk.hex('#00A67E'),
+      [AITool.CURSOR]: chalk.hex('#FF6B6B'),
       [AITool.GEMINI]: chalk.hex('#4796E3'),
       [AITool.OPENCODE]: chalk.yellow,
     };
