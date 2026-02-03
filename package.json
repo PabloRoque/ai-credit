@@ -14,7 +14,7 @@
     "v-patch": "npm version patch",
     "v-minor": "npm version minor",
     "v-major": "npm version major",
-    "pub": "npm run build && npm publish --access public",
+    "pub": "npm publish --access public",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
