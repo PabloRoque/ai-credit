@@ -5,7 +5,7 @@
 
 A command-line tool to track and analyze AI coding assistants' contributions in your codebase (macOS/Linux/Windows). Supports **Claude Code**, **Codex CLI**, **Cursor**, **Gemini CLI**, and **Opencode**.
 
-<img width="700" height="700" alt="image" src="https://github.com/user-attachments/assets/48545b91-8d20-4946-bc1c-f55762c01539" />
+<img width="749" height="720" alt="Image" src="https://github.com/user-attachments/assets/7906e789-56fe-4406-bb54-afbe9d111fb5" />
 
 ## Quick Start
 
