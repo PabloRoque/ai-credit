@@ -11,7 +11,10 @@
     "build": "tsc",
     "start": "node dist/cli.js",
     "dev": "tsc && node dist/cli.js",
-    "pub": "npm version patch && npm run build && npm publish --access public",
+    "v-patch": "npm version patch",
+    "v-minor": "npm version minor",
+    "v-major": "npm version major",
+    "pub": "npm run build && npm publish --access public",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
