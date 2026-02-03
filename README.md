@@ -52,11 +52,13 @@ npx ai-credit -v
 
 ```bash
 npx ai-credit [path]
+ npx ai-credit [path] --verification relaxed
 
 # Options:
 #   -f, --format    Output format (console/json/markdown)
 #   -o, --output    Output file path
 #   -t, --tools     AI tools to analyze (claude,codex,cursor,gemini,opencode,all)
+#   --verification  Verification mode (strict/relaxed/historical, default: relaxed)
 #   -v, --verbose   Show detailed output
 ```
 
@@ -81,7 +83,8 @@ Shows which AI tools have data available on your system:
 ### File-level Analysis
 
 ```bash
-npx ai-credit files [path] [-n LIMIT]
+npx ai-credit files [path] [-n LIMIT] [--verification MODE]
+npx ai-credit files [path] --verification strict
 ```
 
 Shows which files have the most AI contributions.
@@ -89,7 +92,8 @@ Shows which files have the most AI contributions.
 ### Contribution History
 
 ```bash
-npx ai-credit history [path] [-n LIMIT]
+npx ai-credit history [path] [-n LIMIT] [--verification MODE]
+npx ai-credit history [path] --verification historical
 ```
 
 Shows a timeline of AI contributions.
@@ -112,6 +116,7 @@ Leave a 🌟 star if you like it: https://github.com/debugtheworldbot/ai-credit
 │ AI Contribution Analysis                         │
 │ Repository: /Users/eric/Developer/ai-credit      │
 │ Scan time: 2/2/2026, 4:22:53 PM                  │
+│ Verification: relaxed                            │
 ╰──────────────────────────────────────────────────╯
 📊 Overview
 ┌─────────────┬───────┬─────────────────┐
@@ -259,6 +264,8 @@ Here's a detailed breakdown of the parsing method for each supported tool:
 
 **Note:** The Cursor scanner relies on the `sqlite3` CLI being available.
 
+**Note:** Cursor tab completions are not included in the statistics.
+
 **Example (Simplified Cursor codeBlockDiff JSON):**
 
 ```json
@@ -360,9 +367,9 @@ In essence, `ai-credit` features a specialized scanner for each supported AI too
 
 ### Core Principle: Verified Existence
 
-The tool applies a strict verification rule when calculating AI contribution statistics:
+The tool applies a verification rule when calculating AI contribution statistics. The default is **relaxed**.
 
-> **Only lines that currently exist in the codebase with exactly the same content are counted as AI contributions.**
+> **Only lines that currently exist in the codebase are counted as AI contributions.**
 
 ### How It Works
 
@@ -377,8 +384,9 @@ The tool applies a strict verification rule when calculating AI contribution sta
 
 4. **Verify Against Current Codebase**: Before counting any line as an AI contribution, the tool:
    - Reads the current content of the target file from the repository
-   - For each line that AI claims to have added, checks if an **identical line** exists in the current file
-   - Only lines that match exactly (character-for-character) are counted
+   - For each line that AI claims to have added, checks if a matching line exists in the current file
+   - In **relaxed** mode, matching ignores whitespace-only differences (trim + collapse spaces)
+   - In **strict** mode, matching is character-for-character
 
 5. **Calculate Statistics**: The verified lines are then aggregated into:
    - Per-file contribution counts
@@ -403,6 +411,14 @@ def helper():
 ```
 
 Then the line `return True` will **NOT** be counted as an AI contribution because it no longer exists in the codebase. Only if the line matches exactly will it be included in the statistics.
+
+### Verification Modes
+
+You can switch modes with `--verification`.
+
+- `relaxed` (default): Match lines after normalizing whitespace.
+- `strict`: Match lines exactly (character-for-character).
+- `historical`: Count tool-reported added lines for files that still exist, capped by the current file’s non-empty line count.
 
 ### Why This Approach?
 

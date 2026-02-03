@@ -9,12 +9,12 @@ import { fileURLToPath } from 'url'
 import { Worker, isMainThread, parentPort, workerData } from 'worker_threads'
 import { ContributionAnalyzer } from './analyzer.js'
 import { ConsoleReporter, JsonReporter, MarkdownReporter } from './reporter.js'
-import { AITool, OutputFormat } from './types.js'
+import { AITool, OutputFormat, VerificationMode } from './types.js'
 
 // Worker thread: run analysis off the main thread so ora can animate
 if (!isMainThread) {
-  const { projectPath, tools } = workerData;
-  const analyzer = new ContributionAnalyzer(projectPath);
+  const { projectPath, tools, verificationMode } = workerData;
+  const analyzer = new ContributionAnalyzer(projectPath, verificationMode as VerificationMode | undefined);
   let lastProgressSent = 0;
   let pendingPath: string | null = null;
   const sendProgress = (filePath: string) => {
@@ -45,11 +45,12 @@ if (!isMainThread) {
 function analyzeInWorker(
   projectPath: string,
   tools?: AITool[],
+  verificationMode?: VerificationMode,
   onProgress?: (filePath: string) => void
 ): Promise<any> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(fileURLToPath(import.meta.url), {
-      workerData: { projectPath, tools },
+      workerData: { projectPath, tools, verificationMode },
     });
     worker.on('message', (msg: any) => {
       if (msg && typeof msg === 'object' && msg.type === 'progress') {
@@ -218,6 +219,15 @@ function parseTools(toolStr: string | undefined): AITool[] | undefined {
   return tools.length > 0 ? tools : undefined;
 }
 
+function parseVerificationMode(mode: string | undefined): VerificationMode {
+  const normalized = (mode || 'strict').toLowerCase();
+  if (normalized === 'strict' || normalized === 'relaxed' || normalized === 'historical') {
+    return normalized;
+  }
+  console.error(chalk.red(`Error: Invalid verification mode '${mode}'. Use strict, relaxed, or historical.`));
+  process.exit(1);
+}
+
 const program = new Command();
 
 program
@@ -232,6 +242,7 @@ program
   .option('-f, --format <format>', 'Output format (console, json, markdown)', 'console')
   .option('-o, --output <file>', 'Output file path (for json/markdown formats)')
   .option('-t, --tools <tools>', 'AI tools to analyze (claude,codex,gemini,opencode or all)', 'all')
+  .option('--verification <mode>', 'Verification mode (strict, relaxed, historical)', 'relaxed')
   .option('-v, --verbose', 'Show detailed output including files and timeline')
   .action(async (repoPath: string = '.', options) => {
     const resolvedPath = path.resolve(repoPath);
@@ -246,7 +257,8 @@ program
 
     try {
       const tools = parseTools(options.tools);
-      const stats = await analyzeInWorker(resolvedPath, tools, (filePath) => {
+      const verificationMode = parseVerificationMode(options.verification);
+      const stats = await analyzeInWorker(resolvedPath, tools, verificationMode, (filePath) => {
         spinner.updateSecondary(filePath);
       });
 
@@ -315,13 +327,15 @@ program
   .command('files [path]')
   .description('Show file-level AI contribution details')
   .option('-n, --limit <number>', 'Number of files to show', '20')
+  .option('--verification <mode>', 'Verification mode (strict, relaxed, historical)', 'relaxed')
   .action(async (repoPath: string = '.', options) => {
     const resolvedPath = path.resolve(repoPath);
     const baseText = 'Analyzing files...';
     const spinner = startRainbowLoading(baseText);
 
     try {
-      const stats = await analyzeInWorker(resolvedPath, undefined, (filePath) => {
+      const verificationMode = parseVerificationMode(options.verification);
+      const stats = await analyzeInWorker(resolvedPath, undefined, verificationMode, (filePath) => {
         spinner.updateSecondary(filePath);
       });
       spinner.stop();
@@ -340,13 +354,15 @@ program
   .command('history [path]')
   .description('Show AI contribution history/timeline')
   .option('-n, --limit <number>', 'Number of entries to show', '20')
+  .option('--verification <mode>', 'Verification mode (strict, relaxed, historical)', 'relaxed')
   .action(async (repoPath: string = '.', options) => {
     const resolvedPath = path.resolve(repoPath);
     const baseText = 'Loading history...';
     const spinner = startRainbowLoading(baseText);
 
     try {
-      const stats = await analyzeInWorker(resolvedPath, undefined, (filePath) => {
+      const verificationMode = parseVerificationMode(options.verification);
+      const stats = await analyzeInWorker(resolvedPath, undefined, verificationMode, (filePath) => {
         spinner.updateSecondary(filePath);
       });
       spinner.stop();
@@ -421,6 +437,7 @@ program
   .option('-f, --format <format>', 'Output format (console, json, markdown)', 'console')
   .option('-o, --output <file>', 'Output file path')
   .option('-t, --tools <tools>', 'AI tools to analyze', 'all')
+  .option('--verification <mode>', 'Verification mode (strict, relaxed, historical)', 'relaxed')
   .option('-v, --verbose', 'Show detailed output')
   .action(async (repoPath: string, options) => {
     // If no subcommand is provided, run scan
@@ -436,7 +453,8 @@ program
 
     try {
       const tools = parseTools(options.tools);
-      const stats = await analyzeInWorker(resolvedPath, tools, (filePath) => {
+      const verificationMode = parseVerificationMode(options.verification);
+      const stats = await analyzeInWorker(resolvedPath, tools, verificationMode, (filePath) => {
         spinner.updateSecondary(filePath);
       });
 

@@ -10,6 +10,11 @@ export enum AITool {
 }
 
 /**
+ * Verification mode for counting AI contributions
+ */
+export type VerificationMode = 'strict' | 'relaxed' | 'historical';
+
+/**
  * Represents a single file change made by an AI tool
  */
 export interface FileChange {
@@ -85,6 +90,7 @@ export interface FileStats {
 export interface ContributionStats {
   repoPath: string;
   scanTime: Date;
+  verificationMode: VerificationMode;
   totalFiles: number;
   totalLines: number;
   aiTouchedFiles: number;
@@ -107,4 +113,5 @@ export interface CLIOptions {
   output?: string;
   tools?: AITool[];
   verbose: boolean;
+  verificationMode?: VerificationMode;
 }

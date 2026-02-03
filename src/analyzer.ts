@@ -9,6 +9,7 @@ import {
   FileChange,
   FileStats,
   ToolStats,
+  VerificationMode,
 } from './types.js';
 import {
   BaseScanner,
@@ -23,6 +24,7 @@ type RepoFileInfo = {
   totalLines: number;
   nonEmptyLines: number;
   lineSet: Set<string>;
+  normalizedLineSet: Set<string>;
 };
 
 /**
@@ -31,9 +33,11 @@ type RepoFileInfo = {
 export class ContributionAnalyzer {
   private projectPath: string;
   private scanners: BaseScanner[];
+  private verificationMode: VerificationMode;
 
-  constructor(projectPath: string) {
+  constructor(projectPath: string, verificationMode: VerificationMode = 'relaxed') {
     this.projectPath = path.resolve(projectPath);
+    this.verificationMode = verificationMode;
     this.scanners = [
       new ClaudeScanner(),
       new CodexScanner(),
@@ -92,11 +96,13 @@ export class ContributionAnalyzer {
     // Get repository file stats
     const repoFiles = this.getRepoFiles();
     const repoFileSet = new Set(repoFiles);
-    const filesNeedingLineSet = new Set<string>();
+    const filesNeedingLineSet = this.verificationMode === 'historical'
+      ? undefined
+      : new Set<string>();
 
     for (const session of sessions) {
       for (const change of session.changes) {
-        if (repoFileSet.has(change.filePath)) {
+        if (filesNeedingLineSet && repoFileSet.has(change.filePath)) {
           filesNeedingLineSet.add(change.filePath);
         }
       }
@@ -136,6 +142,7 @@ export class ContributionAnalyzer {
     return {
       repoPath: this.projectPath,
       scanTime: new Date(),
+      verificationMode: this.verificationMode,
       totalFiles: repoFiles.length,
       totalLines,
       aiTouchedFiles,
@@ -229,6 +236,7 @@ export class ContributionAnalyzer {
   ): Map<string, RepoFileInfo> {
     const index = new Map<string, RepoFileInfo>();
     const emptyLineSet = new Set<string>();
+    const emptyNormalizedLineSet = new Set<string>();
 
     for (const file of files) {
       if (onProgress) {
@@ -240,7 +248,9 @@ export class ContributionAnalyzer {
         const totalLines = normalizedLines.length;
         let nonEmptyLines = 0;
         const buildLineSet = filesNeedingLineSet?.has(file) ?? false;
+        const buildNormalizedLineSet = buildLineSet && this.verificationMode === 'relaxed';
         const lineSet = buildLineSet ? new Set<string>() : emptyLineSet;
+        const normalizedLineSet = buildNormalizedLineSet ? new Set<string>() : emptyNormalizedLineSet;
 
         for (const line of normalizedLines) {
           if (line.length === 0) continue;
@@ -248,11 +258,22 @@ export class ContributionAnalyzer {
           if (buildLineSet) {
             lineSet.add(line);
           }
+          if (buildNormalizedLineSet) {
+            const normalized = this.normalizeLine(line);
+            if (normalized.length > 0) {
+              normalizedLineSet.add(normalized);
+            }
+          }
         }
 
-        index.set(file, { totalLines, nonEmptyLines, lineSet });
+        index.set(file, { totalLines, nonEmptyLines, lineSet, normalizedLineSet });
       } catch {
-        index.set(file, { totalLines: 0, nonEmptyLines: 0, lineSet: emptyLineSet });
+        index.set(file, {
+          totalLines: 0,
+          nonEmptyLines: 0,
+          lineSet: emptyLineSet,
+          normalizedLineSet: emptyNormalizedLineSet,
+        });
       }
     }
 
@@ -288,6 +309,13 @@ export class ContributionAnalyzer {
   }
 
   /**
+   * Normalize a line for relaxed matching (collapse whitespace)
+   */
+  private normalizeLine(line: string): string {
+    return line.trim().replace(/\s+/g, ' ');
+  }
+
+  /**
    * Get added lines from a change, falling back to content
    */
   private getAddedLines(change: FileChange): string[] {
@@ -306,6 +334,15 @@ export class ContributionAnalyzer {
   private countVerifiedAddedLines(change: FileChange, fileInfo: RepoFileInfo | undefined): number {
     if (!fileInfo) return 0;
     const addedLines = this.getAddedLines(change);
+    const reportedAdded = change.linesAdded > 0 ? change.linesAdded : addedLines.length;
+
+    if (this.verificationMode === 'historical') {
+      if (reportedAdded <= 0) return 0;
+      const cap = fileInfo.nonEmptyLines > 0 ? fileInfo.nonEmptyLines : fileInfo.totalLines;
+      if (cap <= 0) return 0;
+      return Math.min(reportedAdded, cap);
+    }
+
     if (addedLines.length === 0) return 0;
 
     let matched = 0;
@@ -313,6 +350,13 @@ export class ContributionAnalyzer {
       if (line.length === 0) continue;
       if (fileInfo.lineSet.has(line)) {
         matched++;
+        continue;
+      }
+      if (this.verificationMode === 'relaxed') {
+        const normalized = this.normalizeLine(line);
+        if (normalized.length > 0 && fileInfo.normalizedLineSet.has(normalized)) {
+          matched++;
+        }
       }
     }
 

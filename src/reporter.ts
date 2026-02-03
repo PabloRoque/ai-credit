@@ -47,6 +47,7 @@ export class ConsoleReporter {
     const title = 'AI Contribution Analysis';
     const repoLine = `Repository: ${stats.repoPath}`;
     const timeLine = `Scan time: ${stats.scanTime.toLocaleString()}`;
+    const modeLine = `Verification: ${stats.verificationMode}`;
 
     console.log();
     console.log(chalk.dim('Leave a 🌟 star if you like it: https://github.com/debugtheworldbot/ai-credit'));
@@ -55,6 +56,7 @@ export class ConsoleReporter {
     console.log(chalk.cyan('│') + ' ' + chalk.bold(title.padEnd(boxWidth - 1)) + chalk.cyan('│'));
     console.log(chalk.cyan('│') + ' ' + repoLine.substring(0, boxWidth - 1).padEnd(boxWidth - 1) + chalk.cyan('│'));
     console.log(chalk.cyan('│') + ' ' + timeLine.padEnd(boxWidth - 1) + chalk.cyan('│'));
+    console.log(chalk.cyan('│') + ' ' + modeLine.padEnd(boxWidth - 1) + chalk.cyan('│'));
     console.log(chalk.cyan('╰' + '─'.repeat(boxWidth) + '╯'));
     console.log();
   }
@@ -314,6 +316,7 @@ export class JsonReporter {
     const output = {
       repo_path: stats.repoPath,
       scan_time: stats.scanTime.toISOString(),
+      verification_mode: stats.verificationMode,
       overview: {
         total_files: stats.totalFiles,
         total_lines: stats.totalLines,
@@ -380,6 +383,7 @@ export class MarkdownReporter {
     lines.push('');
     lines.push(`**Repository:** \`${stats.repoPath}\``);
     lines.push(`**Generated:** ${stats.scanTime.toLocaleString()}`);
+    lines.push(`**Verification:** ${stats.verificationMode}`);
     lines.push('');
 
     // Overview
