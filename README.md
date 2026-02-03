@@ -274,6 +274,46 @@ Here's a detailed breakdown of the parsing method for each supported tool:
 }
 ```
 
+### 4. Opencode
+
+-   **File Format**: JSON (`.json`) session and message files.
+-   **Scan Paths**:
+    -   Sessions: `~/.local/share/opencode/storage/session/**/*.json`
+    -   Messages: `~/.local/share/opencode/storage/message/<session-id>/*.json`
+-   **Parsing Logic**:
+    1.  The scanner reads all session JSON files (stored under project-hash subfolders).
+    2.  It filters sessions by project path using `directory` or `projectPath` in the session metadata.
+    3.  If message files exist for the session, it parses each message and looks for `summary.diffs`.
+    4.  If no message-level diffs are found, it falls back to `summary.diffs` in the session file.
+    5.  Each diff entry provides:
+        -   `file`: relative file path
+        -   `before`: previous content
+        -   `after`: new content
+        -   `additions` / `deletions`: optional precomputed line counts
+    6.  Lines added/removed are taken from `additions`/`deletions` when present, otherwise computed from `before`/`after`.
+    7.  The scanner also extracts the model from message data (e.g., `model.modelID`) when available.
+
+**Example (Simplified Opencode Message JSON):**
+
+```json
+{
+  "sessionID": "sess_abc123",
+  "time": { "created": "2026-02-02T10:15:00Z" },
+  "model": { "modelID": "kimi-k2.5-free" },
+  "summary": {
+    "diffs": [
+      {
+        "file": "src/index.ts",
+        "before": "console.log('old');\n",
+        "after": "console.log('new');\n",
+        "additions": 1,
+        "deletions": 1
+      }
+    ]
+  }
+}
+```
+
 ### Summary
 
 In essence, `ai-credit` features a specialized scanner for each supported AI tool. Each scanner is programmed to know its corresponding tool's log storage location and data structure. During analysis, the main program invokes all available scanners, collects all `FileChange` events related to the target project, and then aggregates, deduplicates, and analyzes these events to generate the final contribution report.
