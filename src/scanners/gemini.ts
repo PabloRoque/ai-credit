@@ -313,9 +313,14 @@ export class GeminiScanner extends BaseScanner {
     let addedLines: string[] = [];
 
     if (writeOps.includes(funcName)) {
-      linesAdded = this.countLines(newContent);
-      linesRemoved = this.countLines(oldContent); // Usually 0 for write, unless overwriting
-      addedLines = this.extractNonEmptyLines(newContent);
+      const stats = this.calculateDiffStats(oldContent, newContent);
+      linesAdded = stats.added;
+      linesRemoved = stats.removed;
+      if (oldContent && newContent) {
+        addedLines = this.diffAddedLines(oldContent, newContent);
+      } else {
+        addedLines = this.extractNonEmptyLines(newContent);
+      }
     } else if (editOps.includes(funcName)) {
       // Use LCS for edits to be accurate
       const stats = this.calculateDiffStats(oldContent, newContent);

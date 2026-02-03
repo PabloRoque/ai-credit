@@ -210,16 +210,25 @@ export class ClaudeScanner extends BaseScanner {
 
     if (writeOps.includes(toolName)) {
       changeType = oldContent ? 'modify' : 'create';
-      linesAdded = this.countLines(newContent);
-      linesRemoved = this.countLines(oldContent);
-      addedLines = this.extractNonEmptyLines(newContent);
-    } else if (editOps.includes(toolName)) {
-      changeType = 'modify';
-      linesAdded = this.countLines(newContent);
-      linesRemoved = this.countLines(oldContent);
+      const stats = this.diffLineCounts(oldContent, newContent);
+      linesAdded = stats.added;
+      linesRemoved = stats.removed;
       if (oldContent && newContent) {
         addedLines = this.diffAddedLines(oldContent, newContent);
       } else {
+        addedLines = this.extractNonEmptyLines(newContent);
+      }
+    } else if (editOps.includes(toolName)) {
+      changeType = 'modify';
+      if (oldContent && newContent) {
+        const stats = this.diffLineCounts(oldContent, newContent);
+        linesAdded = stats.added;
+        linesRemoved = stats.removed;
+        addedLines = this.diffAddedLines(oldContent, newContent);
+      } else {
+        const stats = this.diffLineCounts(oldContent, newContent);
+        linesAdded = stats.added;
+        linesRemoved = stats.removed;
         addedLines = this.extractNonEmptyLines(newContent);
       }
     } else {

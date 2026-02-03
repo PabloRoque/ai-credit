@@ -352,21 +352,31 @@ export class CodexScanner extends BaseScanner {
     let addedLines: string[] = [];
 
     if (writeOps.includes(funcName)) {
-      changeType = 'create';
-      linesAdded = this.countLines(newContent);
-      addedLines = this.extractNonEmptyLines(newContent);
+      changeType = oldContent ? 'modify' : 'create';
+      const stats = this.diffLineCounts(oldContent, newContent);
+      linesAdded = stats.added;
+      linesRemoved = stats.removed;
+      if (oldContent && newContent) {
+        addedLines = this.diffAddedLines(oldContent, newContent);
+      } else {
+        addedLines = this.extractNonEmptyLines(newContent);
+      }
     } else if (editOps.includes(funcName)) {
       changeType = 'modify';
-      linesAdded = this.countLines(newContent);
-      linesRemoved = this.countLines(oldContent);
       if ((funcName === 'apply_diff' || funcName === 'patch') && args.diff) {
         const diffStats = this.parseDiff(args.diff);
         linesAdded = diffStats.added;
         linesRemoved = diffStats.removed;
         addedLines = this.extractAddedLinesFromDiff(args.diff);
       } else if (oldContent && newContent) {
+        const stats = this.diffLineCounts(oldContent, newContent);
+        linesAdded = stats.added;
+        linesRemoved = stats.removed;
         addedLines = this.diffAddedLines(oldContent, newContent);
       } else {
+        const stats = this.diffLineCounts(oldContent, newContent);
+        linesAdded = stats.added;
+        linesRemoved = stats.removed;
         addedLines = this.extractNonEmptyLines(newContent);
       }
     } else {

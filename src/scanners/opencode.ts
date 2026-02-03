@@ -178,9 +178,10 @@ export class OpencodeScanner extends BaseScanner {
 
     // Use opencode's provided diff stats if available (most accurate)
     // additions/deletions are pre-calculated by opencode
+    const diffStats = this.diffLineCounts(beforeContent, afterContent);
     const addedLines = this.diffAddedLines(beforeContent, afterContent);
-    const linesAdded = typeof diff.additions === 'number' ? diff.additions : addedLines.length;
-    const linesRemoved = typeof diff.deletions === 'number' ? diff.deletions : 0;
+    const linesAdded = typeof diff.additions === 'number' ? diff.additions : diffStats.added;
+    const linesRemoved = typeof diff.deletions === 'number' ? diff.deletions : diffStats.removed;
 
     return {
       filePath,

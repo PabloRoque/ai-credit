@@ -118,6 +118,42 @@ export abstract class BaseScanner {
   }
 
   /**
+   * Compute added/removed line counts using LCS diff (non-empty lines only)
+   */
+  protected diffLineCounts(before: string | undefined, after: string | undefined): { added: number; removed: number } {
+    const beforeLines = this.extractNonEmptyLines(before);
+    const afterLines = this.extractNonEmptyLines(after);
+
+    if (beforeLines.length === 0) return { added: afterLines.length, removed: 0 };
+    if (afterLines.length === 0) return { added: 0, removed: beforeLines.length };
+
+    const m = beforeLines.length;
+    const n = afterLines.length;
+    let prev = new Array(n + 1).fill(0);
+    let curr = new Array(n + 1).fill(0);
+
+    for (let i = 1; i <= m; i++) {
+      for (let j = 1; j <= n; j++) {
+        if (beforeLines[i - 1] === afterLines[j - 1]) {
+          curr[j] = prev[j - 1] + 1;
+        } else {
+          curr[j] = Math.max(prev[j], curr[j - 1]);
+        }
+      }
+      const temp = prev;
+      prev = curr;
+      curr = temp;
+      curr.fill(0);
+    }
+
+    const lcs = prev[n];
+    return {
+      added: afterLines.length - lcs,
+      removed: beforeLines.length - lcs,
+    };
+  }
+
+  /**
    * Extract added lines from a unified diff
    */
   protected extractAddedLinesFromDiff(diff: string | undefined): string[] {

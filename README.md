@@ -3,7 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/ai-credit.svg)](https://www.npmjs.com/package/ai-credit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A command-line tool to track and analyze AI coding assistants' contributions in your codebase (macOS/Linux). Supports **Claude Code**, **Codex CLI**, **Gemini CLI**, and **Opencode**.
+A command-line tool to track and analyze AI coding assistants' contributions in your codebase (macOS/Linux/Windows). Supports **Claude Code**, **Codex CLI**, **Gemini CLI**, and **Opencode**.
 
 ## Quick Start
 
@@ -18,7 +18,7 @@ ai-credit
 
 ## Features
 
-- 🔍 **Auto-detection**: Automatically finds AI tool session data on your system (macOS/Linux)
+- 🔍 **Auto-detection**: Automatically finds AI tool session data on your system (macOS/Linux/Windows)
 - 📊 **Detailed Statistics**: Lines of code, files modified, contribution ratios
 - 🤖 **Multi-tool Support**: Claude Code, Codex CLI, Gemini CLI, Opencode
 - 📈 **Visual Reports**: Console, JSON, and Markdown output formats
@@ -340,6 +340,7 @@ This methodology ensures that:
 - Accuracy depends on the completeness of AI tool session logs
 - Some AI tools may not record all file operations
 - Files ignored by the root `.gitignore` are excluded from Total Files/Lines
+- Windows support for some tools depends on their session storage format compatibility
 
 ## Contributing
 
