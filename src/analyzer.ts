@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { execFileSync } from 'child_process';
 import { glob } from 'glob';
 import ignore, { type Ignore } from 'ignore';
 import {
@@ -157,6 +158,99 @@ export class ContributionAnalyzer {
    * Get all files in the repository (excluding common ignore patterns)
    */
   private getRepoFiles(): string[] {
+    const gitFiles = this.getRepoFilesFromGit();
+    if (gitFiles.length > 0) {
+      return gitFiles;
+    }
+
+    return this.getRepoFilesFromGlob();
+  }
+
+  private getRepoFilesFromGit(): string[] {
+    const repoRoot = this.getGitRepoRoot();
+    if (!repoRoot) {
+      return [];
+    }
+
+    const relativeRoot = path.relative(repoRoot, this.projectPath);
+    const normalizedRelativeRoot = this.normalizePathSegment(relativeRoot);
+    const pathspec = normalizedRelativeRoot ? [normalizedRelativeRoot] : [];
+
+    try {
+      const tracked = this.runGitLsFiles(['ls-files', '-z', ...(pathspec.length > 0 ? ['--', ...pathspec] : [])]);
+      const untracked = this.runGitLsFiles([
+        'ls-files',
+        '-z',
+        '--others',
+        '--exclude-standard',
+        ...(pathspec.length > 0 ? ['--', ...pathspec] : []),
+      ]);
+      const normalized = this.normalizeGitPaths([...tracked, ...untracked], normalizedRelativeRoot);
+      return this.filterRepoFiles(normalized);
+    } catch {
+      return [];
+    }
+  }
+
+  private getGitRepoRoot(): string | null {
+    try {
+      const result = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+        cwd: this.projectPath,
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim();
+      return result.length > 0 ? result : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private runGitLsFiles(args: string[]): string[] {
+    const output = execFileSync('git', args, {
+      cwd: this.projectPath,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      maxBuffer: 50 * 1024 * 1024,
+    });
+    return output.split('\u0000').filter(Boolean);
+  }
+
+  private normalizeGitPaths(files: string[], projectRelativeToRepo: string | null): string[] {
+    const normalized = files.map(file => this.toForwardSlash(file)).filter(Boolean);
+    if (!projectRelativeToRepo) {
+      return normalized;
+    }
+
+    const trimmedRoot = projectRelativeToRepo.replace(/\/+$/, '');
+    if (!trimmedRoot) {
+      return normalized;
+    }
+
+    const prefix = `${trimmedRoot}/`;
+    const trimmed: string[] = [];
+    for (const file of normalized) {
+      if (file.startsWith(prefix)) {
+        trimmed.push(file.slice(prefix.length));
+      }
+    }
+    return trimmed;
+  }
+
+  private normalizePathSegment(segment: string): string | null {
+    if (!segment || segment === '.' || segment === path.sep) {
+      return null;
+    }
+    if (segment.startsWith('..')) {
+      return null;
+    }
+    return this.toForwardSlash(segment);
+  }
+
+  private toForwardSlash(p: string): string {
+    return p.replace(/\\/g, '/');
+  }
+
+  private getRepoFilesFromGlob(): string[] {
     const ignorePatterns = [
       '**/node_modules/**',
       '**/.git/**',
@@ -175,55 +269,88 @@ export class ContributionAnalyzer {
     ];
 
     try {
-      let files = glob.sync('**/*', {
+      const files = glob.sync('**/*', {
         cwd: this.projectPath,
         nodir: true,
         ignore: ignorePatterns,
       });
-
-      // Filter to only include text files
-      files = files.filter(file => {
-        const ext = path.extname(file).toLowerCase();
-        const textExtensions = [
-          '.js', '.ts', '.jsx', '.tsx', '.mjs', '.cjs',
-          '.py', '.rb', '.go', '.rs', '.java', '.kt', '.scala',
-          '.c', '.cpp', '.h', '.hpp', '.cs',
-          '.html', '.css', '.scss', '.less', '.sass',
-          '.json', '.yaml', '.yml', '.toml', '.xml',
-          '.md', '.txt', '.rst',
-          '.sh', '.bash', '.zsh', '.fish',
-          '.sql', '.graphql',
-          '.vue', '.svelte',
-          '.php', '.swift', '.m',
-          '.r', '.R', '.jl',
-          '.ex', '.exs', '.erl', '.hrl',
-          '.hs', '.elm', '.clj', '.cljs',
-          '.dockerfile', '.tf', '.hcl',
-        ];
-        return textExtensions.includes(ext) || !ext;
-      });
-
-      // Normalize to forward slashes so keys match scanner output on all platforms
-      files = files.map(file => file.replace(/\\/g, '/'));
-
-      const gitignorePath = path.join(this.projectPath, '.gitignore');
-      if (fs.existsSync(gitignorePath)) {
-        try {
-          const gitignoreContent = fs.readFileSync(gitignorePath, 'utf-8');
-          const ignoreFactory = (ignore as unknown as { default?: () => Ignore }).default
-            ?? (ignore as unknown as () => Ignore);
-          const ig = ignoreFactory();
-          ig.add(gitignoreContent.split(/\r?\n/));
-          files = files.filter(file => !ig.ignores(file));
-        } catch {
-          // Ignore gitignore parsing errors
-        }
-      }
-
-      return files;
+      return this.filterRepoFiles(files);
     } catch {
       return [];
     }
+  }
+
+  private filterRepoFiles(files: string[]): string[] {
+    let filtered = files.map(file => file.replace(/\\/g, '/')).filter(Boolean);
+    filtered = filtered.filter(file => !this.shouldIgnoreByDefault(file));
+    filtered = filtered.filter(file => this.isTextFile(file));
+
+    const gitignorePath = path.join(this.projectPath, '.gitignore');
+    if (fs.existsSync(gitignorePath)) {
+      try {
+        const gitignoreContent = fs.readFileSync(gitignorePath, 'utf-8');
+        const ignoreFactory = (ignore as unknown as { default?: () => Ignore }).default
+          ?? (ignore as unknown as () => Ignore);
+        const ig = ignoreFactory();
+        ig.add(gitignoreContent.split(/\r?\n/));
+        filtered = filtered.filter(file => !ig.ignores(file));
+      } catch {
+        // Ignore gitignore parsing errors
+      }
+    }
+
+    return filtered;
+  }
+
+  private shouldIgnoreByDefault(file: string): boolean {
+    const normalized = file.replace(/\\/g, '/');
+    const wrapped = `/${normalized}`;
+
+    if (wrapped.includes('/node_modules/')) return true;
+    if (wrapped.includes('/.git/')) return true;
+    if (wrapped.includes('/dist/')) return true;
+    if (wrapped.includes('/build/')) return true;
+    if (wrapped.includes('/__pycache__/')) return true;
+    if (wrapped.includes('/venv/')) return true;
+    if (wrapped.includes('/.venv/')) return true;
+    if (wrapped.includes('/coverage/')) return true;
+    if (wrapped.includes('/.next/')) return true;
+    if (wrapped.includes('/.nuxt/')) return true;
+    if (normalized.endsWith('.pyc')) return true;
+
+    const base = path.posix.basename(normalized);
+    if (base === 'package-lock.json') return true;
+    if (base === 'pnpm-lock.yaml') return true;
+    if (base === 'yarn.lock') return true;
+
+    return false;
+  }
+
+  private isTextFile(file: string): boolean {
+    const ext = path.extname(file).toLowerCase();
+    const textExtensions = [
+      '.js', '.ts', '.jsx', '.tsx', '.mjs', '.cjs',
+      '.py', '.rb', '.go', '.rs', '.java', '.kt', '.scala',
+      '.c', '.cpp', '.h', '.hpp', '.cs',
+      '.html', '.css', '.scss', '.less', '.sass',
+      '.json', '.jsonc', '.json5', '.yaml', '.yml', '.toml', '.xml',
+      '.md', '.mdx', '.txt', '.rst',
+      '.sh', '.bash', '.zsh', '.fish',
+      '.sql', '.graphql', '.gql', '.graphqls',
+      '.vue', '.svelte',
+      '.php', '.swift', '.m',
+      '.r', '.R', '.jl',
+      '.ex', '.exs', '.erl', '.hrl',
+      '.hs', '.elm', '.clj', '.cljs',
+      '.dockerfile', '.tf', '.tfvars', '.hcl',
+      '.proto', '.prisma', '.svg',
+      '.ini', '.conf', '.cfg', '.properties',
+      '.lock', '.gradle', '.groovy', '.kts',
+      '.cmake', '.mk',
+      '.ps1', '.psm1', '.psd1', '.bat', '.cmd',
+      '.csv', '.tsv',
+    ];
+    return textExtensions.includes(ext) || !ext;
   }
 
   /**
