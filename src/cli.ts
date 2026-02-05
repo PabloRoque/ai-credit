@@ -2,15 +2,18 @@
 
 import chalk from 'chalk'
 import { Command } from 'commander'
-import packageJson from '../package.json' assert { type: 'json' }
 import * as fs from 'fs'
 import * as path from 'path'
 import * as readline from 'readline'
+import { createRequire } from 'module'
 import { fileURLToPath } from 'url'
 import { Worker, isMainThread, parentPort, workerData } from 'worker_threads'
 import { ContributionAnalyzer } from './analyzer.js'
 import { ConsoleReporter, JsonReporter, MarkdownReporter } from './reporter.js'
 import { AITool, OutputFormat, VerificationMode } from './types.js'
+
+const nodeRequire = createRequire(import.meta.url);
+const packageJson = nodeRequire('../package.json');
 
 // Worker thread: run analysis off the main thread so ora can animate
 if (!isMainThread) {

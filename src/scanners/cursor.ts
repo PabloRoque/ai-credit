@@ -583,14 +583,18 @@ export class CursorScanner extends BaseScanner {
   }
 
   private querySqliteValueWithSqlJs(dbPath: string, query: string): string | null {
+    const sqlJsPath = this.getSqlJsEntryPath();
+    if (!sqlJsPath) return null;
     const script = [
-      "const initSqlJs = require('sql.js');",
+      "const sqlJsPath = process.env.SQLJS_MODULE_PATH;",
+      "if (!sqlJsPath) { process.exit(0); }",
+      "const initSqlJs = require(sqlJsPath);",
       "const fs = require('fs');",
       "const path = require('path');",
       "const dbPath = process.env.SQLJS_DB_PATH;",
       "const query = process.env.SQLJS_QUERY;",
       "if (!dbPath || !query) { process.exit(0); }",
-      "initSqlJs({ locateFile: file => path.join(path.dirname(require.resolve('sql.js')), file) })",
+      "initSqlJs({ locateFile: file => path.join(path.dirname(sqlJsPath), file) })",
       "  .then(SQL => {",
       "    const data = fs.readFileSync(dbPath);",
       "    const db = new SQL.Database(data);",
@@ -610,6 +614,7 @@ export class CursorScanner extends BaseScanner {
           ...process.env,
           SQLJS_DB_PATH: dbPath,
           SQLJS_QUERY: query,
+          SQLJS_MODULE_PATH: sqlJsPath,
         },
       });
       if (result.error || result.status !== 0) {
@@ -624,12 +629,7 @@ export class CursorScanner extends BaseScanner {
   }
 
   private isSqlJsAvailable(): boolean {
-    try {
-      this.nodeRequire.resolve('sql.js');
-      return true;
-    } catch {
-      return false;
-    }
+    return this.getSqlJsEntryPath() !== null;
   }
 
   private readCursorValue(dbPath: string, key: string): string | null {
@@ -733,8 +733,12 @@ export class CursorScanner extends BaseScanner {
   }
 
   private querySqlitePairsWithSqlJs(dbPath: string, query: string): Array<[string, string]> {
+    const sqlJsPath = this.getSqlJsEntryPath();
+    if (!sqlJsPath) return [];
     const script = [
-      "const initSqlJs = require('sql.js');",
+      "const sqlJsPath = process.env.SQLJS_MODULE_PATH;",
+      "if (!sqlJsPath) { process.exit(0); }",
+      "const initSqlJs = require(sqlJsPath);",
       "const fs = require('fs');",
       "const path = require('path');",
       "const dbPath = process.env.SQLJS_DB_PATH;",
@@ -745,7 +749,7 @@ export class CursorScanner extends BaseScanner {
       "  if (v instanceof Uint8Array) return Buffer.from(v).toString('utf8');",
       "  return String(v);",
       "};",
-      "initSqlJs({ locateFile: file => path.join(path.dirname(require.resolve('sql.js')), file) })",
+      "initSqlJs({ locateFile: file => path.join(path.dirname(sqlJsPath), file) })",
       "  .then(SQL => {",
       "    const data = fs.readFileSync(dbPath);",
       "    const db = new SQL.Database(data);",
@@ -764,6 +768,7 @@ export class CursorScanner extends BaseScanner {
           ...process.env,
           SQLJS_DB_PATH: dbPath,
           SQLJS_QUERY: query,
+          SQLJS_MODULE_PATH: sqlJsPath,
         },
         maxBuffer: 1024 * 1024 * 16,
       });
@@ -784,6 +789,14 @@ export class CursorScanner extends BaseScanner {
   private safeJsonParse<T>(raw: string): T | null {
     try {
       return JSON.parse(raw.trim());
+    } catch {
+      return null;
+    }
+  }
+
+  private getSqlJsEntryPath(): string | null {
+    try {
+      return this.nodeRequire.resolve('sql.js');
     } catch {
       return null;
     }
