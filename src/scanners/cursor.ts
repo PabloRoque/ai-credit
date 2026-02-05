@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { spawnSync } from 'child_process';
+import { createRequire } from 'module';
 import { AISession, AITool, FileChange } from '../types.js';
 import { BaseScanner } from './base.js';
 
@@ -19,6 +20,14 @@ type FileAccumulator = {
   addedLines: string[];
 };
 
+type SqlJsCache = {
+  mode: 'workspace' | 'global';
+  workspaceValues: Map<string, string>;
+  composerData: Map<string, string>;
+  composerDataLoaded: boolean;
+  codeBlockDiffByComposer: Map<string, Map<string, string>>;
+};
+
 /**
  * Scanner for Cursor sessions stored in VS Code-style SQLite databases.
  *
@@ -28,8 +37,10 @@ type FileAccumulator = {
  *   ~/Library/Application Support/Cursor/User/globalStorage/state.vscdb
  */
 export class CursorScanner extends BaseScanner {
-  private sqliteAvailable: boolean | null = null;
+  private sqliteMode: 'cli' | 'sqljs' | 'none' | null = null;
   private warnedMissingSqlite = false;
+  private nodeRequire = createRequire(import.meta.url);
+  private sqlJsCache = new Map<string, SqlJsCache>();
 
   get tool(): AITool {
     return AITool.CURSOR;
@@ -149,26 +160,32 @@ export class CursorScanner extends BaseScanner {
   }
 
   private ensureSqliteAvailable(): boolean {
-    if (this.sqliteAvailable !== null) return this.sqliteAvailable;
+    if (this.sqliteMode !== null) return this.sqliteMode !== 'none';
     try {
       const result = spawnSync('sqlite3', ['-version'], { encoding: 'utf8' });
-      this.sqliteAvailable = result.status === 0 && !result.error;
-      if (!this.sqliteAvailable) {
-        this.warnMissingSqlite();
+      if (result.status === 0 && !result.error) {
+        this.sqliteMode = 'cli';
+        return true;
       }
-      return this.sqliteAvailable;
     } catch {
-      this.sqliteAvailable = false;
-      this.warnMissingSqlite();
-      return false;
+      // ignore and fall back
     }
+
+    if (this.isSqlJsAvailable()) {
+      this.sqliteMode = 'sqljs';
+      return true;
+    }
+
+    this.sqliteMode = 'none';
+    this.warnMissingSqlite();
+    return false;
   }
 
   private warnMissingSqlite(): void {
     if (this.warnedMissingSqlite) return;
     this.warnedMissingSqlite = true;
     // eslint-disable-next-line no-console
-    console.warn('[ai-credit] Cursor scanner requires sqlite3 CLI. Install sqlite3 to enable Cursor stats.');
+    console.warn('[ai-credit] Cursor scanner requires sqlite3 CLI or the sql.js dependency. Install sqlite3 to enable Cursor stats.');
   }
 
   private safeReadDir(dirPath: string): string[] {
@@ -274,10 +291,7 @@ export class CursorScanner extends BaseScanner {
   }
 
   private readComposerSummaries(workspaceDbPath: string): ComposerSummary[] {
-    const raw = this.querySqliteValue(
-      workspaceDbPath,
-      "select cast(value as text) from ItemTable where key='composer.composerData' limit 1;"
-    );
+    const raw = this.readCursorValue(workspaceDbPath, 'composer.composerData');
     if (!raw) return [];
 
     const data = this.safeJsonParse<{ allComposers?: any[] }>(raw);
@@ -295,10 +309,7 @@ export class CursorScanner extends BaseScanner {
 
   private readComposerData(globalDbPath: string, composerId: string): any | null {
     const key = `composerData:${composerId}`;
-    const raw = this.querySqliteValue(
-      globalDbPath,
-      `select value from cursorDiskKV where key='${this.escapeSqliteString(key)}' limit 1;`
-    );
+    const raw = this.readCursorValue(globalDbPath, key);
     if (!raw) return null;
     return this.safeJsonParse<any>(raw);
   }
@@ -455,10 +466,7 @@ export class CursorScanner extends BaseScanner {
     const cacheKey = `${composerId}:${diffId}`;
     if (cache.has(cacheKey)) return cache.get(cacheKey);
     const key = `codeBlockDiff:${composerId}:${diffId}`;
-    const raw = this.querySqliteValue(
-      globalDbPath,
-      `select value from cursorDiskKV where key='${this.escapeSqliteString(key)}' limit 1;`
-    );
+    const raw = this.readCursorValue(globalDbPath, key);
     if (!raw) return null;
     const parsed = this.safeJsonParse<any>(raw);
     if (parsed) cache.set(cacheKey, parsed);
@@ -558,6 +566,9 @@ export class CursorScanner extends BaseScanner {
   }
 
   private querySqliteValue(dbPath: string, query: string): string | null {
+    if (this.sqliteMode === 'sqljs') {
+      return this.querySqliteValueWithSqlJs(dbPath, query);
+    }
     try {
       const result = spawnSync('sqlite3', ['-readonly', dbPath, query], { encoding: 'utf8' });
       if (result.error || result.status !== 0) {
@@ -571,8 +582,203 @@ export class CursorScanner extends BaseScanner {
     }
   }
 
+  private querySqliteValueWithSqlJs(dbPath: string, query: string): string | null {
+    const script = [
+      "const initSqlJs = require('sql.js');",
+      "const fs = require('fs');",
+      "const path = require('path');",
+      "const dbPath = process.env.SQLJS_DB_PATH;",
+      "const query = process.env.SQLJS_QUERY;",
+      "if (!dbPath || !query) { process.exit(0); }",
+      "initSqlJs({ locateFile: file => path.join(path.dirname(require.resolve('sql.js')), file) })",
+      "  .then(SQL => {",
+      "    const data = fs.readFileSync(dbPath);",
+      "    const db = new SQL.Database(data);",
+      "    const res = db.exec(query);",
+      "    if (!res || res.length === 0 || res[0].values.length === 0) return;",
+      "    const val = res[0].values[0][0];",
+      "    if (val === null || val === undefined) return;",
+      "    process.stdout.write(String(val));",
+      "  })",
+      "  .catch(() => { process.exit(1); });",
+    ].join('');
+
+    try {
+      const result = spawnSync(process.execPath, ['-e', script], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          SQLJS_DB_PATH: dbPath,
+          SQLJS_QUERY: query,
+        },
+      });
+      if (result.error || result.status !== 0) {
+        return null;
+      }
+      const output = result.stdout ? result.stdout.toString() : '';
+      const trimmed = output.trimEnd();
+      return trimmed.length > 0 ? trimmed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private isSqlJsAvailable(): boolean {
+    try {
+      this.nodeRequire.resolve('sql.js');
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private readCursorValue(dbPath: string, key: string): string | null {
+    if (this.sqliteMode === 'sqljs') {
+      return this.readCursorValueWithSqlJs(dbPath, key);
+    }
+    const escaped = this.escapeSqliteString(key);
+    const cursorKv = this.querySqliteValue(
+      dbPath,
+      `select value from cursorDiskKV where key='${escaped}' limit 1;`
+    );
+    if (cursorKv) return cursorKv;
+    return this.querySqliteValue(
+      dbPath,
+      `select cast(value as text) from ItemTable where key='${escaped}' limit 1;`
+    );
+  }
+
   private escapeSqliteString(value: string): string {
     return value.replace(/'/g, "''");
+  }
+
+  private readCursorValueWithSqlJs(dbPath: string, key: string): string | null {
+    const cache = this.getSqlJsCache(dbPath);
+    if (!cache) return null;
+
+    if (cache.mode === 'workspace') {
+      if (cache.workspaceValues.has(key)) return cache.workspaceValues.get(key) ?? null;
+      const rows = this.querySqlitePairsWithSqlJs(
+        dbPath,
+        `select key, value from cursorDiskKV where key='${this.escapeSqliteString(key)}'
+         union all
+         select key, value from ItemTable where key='${this.escapeSqliteString(key)}'`
+      );
+      this.insertIfMissing(cache.workspaceValues, rows);
+      return cache.workspaceValues.get(key) ?? null;
+    }
+
+    if (key.startsWith('composerData:')) {
+      if (!cache.composerDataLoaded) {
+        cache.composerDataLoaded = true;
+        const rows = this.querySqlitePairsWithSqlJs(
+          dbPath,
+          "select key, value from cursorDiskKV where key like 'composerData:%' " +
+          "union all select key, value from ItemTable where key like 'composerData:%'"
+        );
+        this.insertIfMissing(cache.composerData, rows);
+      }
+      return cache.composerData.get(key) ?? null;
+    }
+
+    if (key.startsWith('codeBlockDiff:')) {
+      const composerId = key.split(':')[1];
+      if (!composerId) return null;
+      if (!cache.codeBlockDiffByComposer.has(composerId)) {
+        const rows = this.querySqlitePairsWithSqlJs(
+          dbPath,
+          `select key, value from cursorDiskKV where key like 'codeBlockDiff:${this.escapeSqliteString(composerId)}:%'
+           union all
+           select key, value from ItemTable where key like 'codeBlockDiff:${this.escapeSqliteString(composerId)}:%'`
+        );
+        const map = new Map<string, string>();
+        this.insertIfMissing(map, rows);
+        cache.codeBlockDiffByComposer.set(composerId, map);
+      }
+      return cache.codeBlockDiffByComposer.get(composerId)?.get(key) ?? null;
+    }
+
+    return null;
+  }
+
+  private insertIfMissing(map: Map<string, string>, rows: Array<[string, string]>): void {
+    for (const [rowKey, rowValue] of rows) {
+      if (!map.has(rowKey)) {
+        map.set(rowKey, rowValue);
+      }
+    }
+  }
+
+  private getSqlJsCache(dbPath: string): SqlJsCache | null {
+    const existing = this.sqlJsCache.get(dbPath);
+    if (existing) return existing;
+    const cache: SqlJsCache = {
+      mode: this.isGlobalDbPath(dbPath) ? 'global' : 'workspace',
+      workspaceValues: new Map(),
+      composerData: new Map(),
+      composerDataLoaded: false,
+      codeBlockDiffByComposer: new Map(),
+    };
+    this.sqlJsCache.set(dbPath, cache);
+    return cache;
+  }
+
+  private isGlobalDbPath(dbPath: string): boolean {
+    const normalized = path.resolve(dbPath);
+    const globalPath = path.resolve(this.getGlobalStorageDbPath());
+    if (os.platform() === 'win32') {
+      return normalized.toLowerCase() === globalPath.toLowerCase();
+    }
+    return normalized === globalPath;
+  }
+
+  private querySqlitePairsWithSqlJs(dbPath: string, query: string): Array<[string, string]> {
+    const script = [
+      "const initSqlJs = require('sql.js');",
+      "const fs = require('fs');",
+      "const path = require('path');",
+      "const dbPath = process.env.SQLJS_DB_PATH;",
+      "const query = process.env.SQLJS_QUERY;",
+      "if (!dbPath || !query) { process.exit(0); }",
+      "const toStr = v => {",
+      "  if (v === null || v === undefined) return null;",
+      "  if (v instanceof Uint8Array) return Buffer.from(v).toString('utf8');",
+      "  return String(v);",
+      "};",
+      "initSqlJs({ locateFile: file => path.join(path.dirname(require.resolve('sql.js')), file) })",
+      "  .then(SQL => {",
+      "    const data = fs.readFileSync(dbPath);",
+      "    const db = new SQL.Database(data);",
+      "    const res = db.exec(query);",
+      "    const rows = res && res[0] && Array.isArray(res[0].values) ? res[0].values : [];",
+      "    const out = rows.map(r => [String(r[0]), toStr(r[1])]).filter(r => typeof r[1] === 'string');",
+      "    process.stdout.write(JSON.stringify(out));",
+      "  })",
+      "  .catch(() => { process.exit(1); });",
+    ].join('');
+
+    try {
+      const result = spawnSync(process.execPath, ['-e', script], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          SQLJS_DB_PATH: dbPath,
+          SQLJS_QUERY: query,
+        },
+        maxBuffer: 1024 * 1024 * 16,
+      });
+      if (result.error || result.status !== 0) {
+        return [];
+      }
+      const output = result.stdout ? result.stdout.toString() : '';
+      const parsed = JSON.parse(output);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter((row: unknown): row is [string, string] => {
+        return Array.isArray(row) && typeof row[0] === 'string' && typeof row[1] === 'string';
+      });
+    } catch {
+      return [];
+    }
   }
 
   private safeJsonParse<T>(raw: string): T | null {
