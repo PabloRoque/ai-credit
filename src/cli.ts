@@ -2,6 +2,7 @@
 
 import chalk from 'chalk'
 import { Command } from 'commander'
+import packageJson from '../package.json' assert { type: 'json' }
 import * as fs from 'fs'
 import * as path from 'path'
 import * as readline from 'readline'
@@ -233,7 +234,7 @@ const program = new Command();
 program
   .name('ai-credit')
   .description('CLI tool to track and analyze AI coding assistants\' contributions in your codebase')
-  .version('1.0.0');
+  .version(packageJson.version);
 
 // Main scan command
 program
