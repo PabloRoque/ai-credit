@@ -1,187 +1,228 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { glob } from 'glob';
+import * as os from 'os';
+import { spawnSync } from 'child_process';
+import { createRequire } from 'module';
 import { AISession, AITool, FileChange } from '../types.js';
 import { BaseScanner } from './base.js';
 
 /**
- * Scanner for Opencode (opencode.ai) sessions
+ * Scanner for Opencode (opencode.ai) sessions.
  *
- * Opencode stores session data in:
- * ~/.local/share/opencode/storage/
+ * Opencode stores all session data in a SQLite database:
+ *   ~/.local/share/opencode/opencode.db
  *
- * Structure:
- * - storage/session/ - session metadata files (named by session ID)
- * - storage/message/ - individual message files with file change diffs
- * - storage/part/ - message parts
+ * Relevant tables:
+ *   session  — id, directory, time_created, summary_additions, summary_deletions
+ *   message  — session_id, time_created, data (JSON blob)
  *
- * File changes are recorded in message.info.summary.diffs with:
- * - file: relative file path
- * - before: previous content
- * - after: new content
+ * File changes are recorded in message.data as:
+ *   data.summary.diffs[] = { file, patch, additions, deletions, status }
+ *
+ * The model is recorded on user messages as:
+ *   data.model.modelID
  */
 export class OpencodeScanner extends BaseScanner {
+  private nodeRequire = createRequire(import.meta.url);
+
   get tool(): AITool {
     return AITool.OPENCODE;
   }
 
   get storagePath(): string {
-    return '~/.local/share/opencode';
+    return '~/.local/share/opencode/opencode.db';
+  }
+
+  isAvailable(): boolean {
+    return fs.existsSync(this.resolveStoragePath());
   }
 
   scan(projectPath: string): AISession[] {
+    const dbPath = this.resolveStoragePath();
+    if (!fs.existsSync(dbPath)) return [];
+
+    const normalizedProject = path.resolve(projectPath);
+    const rows = this.queryDb(dbPath, normalizedProject);
+    if (!rows) return [];
+
     const sessions: AISession[] = [];
-    const basePath = this.resolveStoragePath();
 
-    if (!fs.existsSync(basePath)) {
-      return sessions;
-    }
+    for (const row of rows) {
+      const { sessionId, sessionDir, timeCreated, messagesJson } = row;
 
-    const sessionDir = path.join(basePath, 'storage', 'session');
-    if (!fs.existsSync(sessionDir)) {
-      return sessions;
-    }
+      if (!this.pathsMatch(sessionDir, normalizedProject)) continue;
 
-    try {
-      // Find all session files recursively (they are in subdirectories by project hash)
-      const sessionFiles = glob.sync('**/*.json', { cwd: sessionDir });
+      let messages: any[] = [];
+      try {
+        messages = JSON.parse(messagesJson);
+      } catch {
+        continue;
+      }
 
-      for (const file of sessionFiles) {
-        const session = this.parseSessionFile(path.join(sessionDir, file), projectPath);
-        if (session && session.changes.length > 0) {
-          sessions.push(session);
+      const changes: FileChange[] = [];
+      let sessionModel: string | undefined;
+
+      for (const msgData of messages) {
+        if (!msgData || !Array.isArray(msgData.summary?.diffs)) continue;
+
+        // Model is on the user message that triggered each turn
+        const msgModel: string | undefined = msgData.model?.modelID ?? undefined;
+        if (msgModel && !sessionModel) sessionModel = msgModel;
+
+        const timestamp = msgData.time?.created
+          ? new Date(msgData.time.created)
+          : new Date(timeCreated);
+
+        for (const diff of msgData.summary.diffs) {
+          const change = this.parseDiff(diff, normalizedProject, timestamp, msgModel ?? sessionModel);
+          if (change) changes.push(change);
         }
       }
-    } catch {
-      // Ignore errors
+
+      if (changes.length === 0) continue;
+
+      const uniqueChanges = this.deduplicateChanges(changes);
+
+      // Back-fill model on changes that didn't have one
+      if (sessionModel) {
+        for (const c of uniqueChanges) {
+          if (!c.model) c.model = sessionModel;
+        }
+      }
+
+      sessions.push({
+        id: sessionId,
+        tool: this.tool,
+        model: sessionModel,
+        timestamp: new Date(timeCreated),
+        projectPath: normalizedProject,
+        changes: uniqueChanges,
+        totalFilesChanged: new Set(uniqueChanges.map(c => c.filePath)).size,
+        totalLinesAdded: uniqueChanges.reduce((s, c) => s + c.linesAdded, 0),
+        totalLinesRemoved: uniqueChanges.reduce((s, c) => s + c.linesRemoved, 0),
+      });
     }
 
     return sessions;
   }
 
-  parseSessionFile(filePath: string, projectPath: string): AISession | null {
-    const sessionData = this.readJsonFile(filePath);
-    if (!sessionData) return null;
-
-    const basePath = this.resolveStoragePath();
-
-    // Extract session info
-    const sessionId = sessionData.id || path.basename(filePath, '.json');
-    const sessionProjectPath = sessionData.directory || sessionData.projectPath || null;
-    const sessionTimestamp = sessionData.time?.created
-      ? new Date(sessionData.time.created)
-      : new Date();
-
-    // Filter by project path
-    if (sessionProjectPath) {
-      const normalizedSessionPath = path.resolve(sessionProjectPath);
-      const normalizedProjectPath = path.resolve(projectPath);
-
-      if (!this.pathsMatch(normalizedSessionPath, normalizedProjectPath)) {
-        return null;
-      }
-    }
-
-    // Parse file changes from messages
-    const changes: FileChange[] = [];
-    let sessionModel: string | undefined;
-
-    // First, try to parse individual message files if available (more granular)
-    const messageDir = path.join(basePath, 'storage', 'message');
-    if (fs.existsSync(messageDir) && sessionData.id) {
-      try {
-        // Messages are stored in subdirectories by session ID
-        const sessionMessageDir = path.join(messageDir, sessionData.id);
-        if (fs.existsSync(sessionMessageDir)) {
-          const messageFiles = glob.sync('*.json', { cwd: sessionMessageDir });
-          for (const msgFile of messageFiles) {
-            const msgData = this.readJsonFile(path.join(sessionMessageDir, msgFile));
-            if (msgData?.sessionID === sessionData.id) {
-              // Extract model from message
-              const msgModel = msgData.model?.modelID;
-              if (msgModel && !sessionModel) {
-                sessionModel = msgModel;
-              }
-              const msgChanges = this.parseMessageChanges(msgData, projectPath, msgModel);
-              changes.push(...msgChanges);
-            }
-          }
-        }
-      } catch {
-        // Ignore errors
-      }
-    }
-
-    // If no changes found in messages, fall back to session summary
-    if (changes.length === 0 && sessionData.summary?.diffs && Array.isArray(sessionData.summary.diffs)) {
-      for (const diff of sessionData.summary.diffs) {
-        const change = this.parseDiff(diff, projectPath, sessionTimestamp, sessionModel);
-        if (change) {
-          changes.push(change);
-        }
-      }
-    }
-
-    if (changes.length === 0) return null;
-
-    // Remove duplicate changes (same file, same content)
-    const uniqueChanges = this.deduplicateChanges(changes);
-
-    // Update all changes with the session model if found
-    if (sessionModel) {
-      for (const change of uniqueChanges) {
-        if (!change.model) {
-          change.model = sessionModel;
-        }
-      }
-    }
-
-    return {
-      id: sessionId,
-      tool: this.tool,
-      model: sessionModel,
-      timestamp: sessionTimestamp,
-      projectPath,
-      changes: uniqueChanges,
-      totalFilesChanged: new Set(uniqueChanges.map(c => c.filePath)).size,
-      totalLinesAdded: uniqueChanges.reduce((sum, c) => sum + c.linesAdded, 0),
-      totalLinesRemoved: uniqueChanges.reduce((sum, c) => sum + c.linesRemoved, 0),
-    };
+  /**
+   * Not used — scanning is driven by the SQLite DB, not individual files.
+   */
+  parseSessionFile(_filePath: string, _projectPath: string): AISession | null {
+    return null;
   }
 
-  /**
-   * Check if two paths match (session belongs to project)
-   */
-  private pathsMatch(sessionPath: string, projectPath: string): boolean {
-    const s = this.toForwardSlash(sessionPath);
-    const p = this.toForwardSlash(projectPath);
-    if (s === p) return true;
-    if (s.startsWith(p + '/')) return true;
-    if (p.startsWith(s + '/')) return true;
-    if (path.basename(sessionPath) === path.basename(projectPath)) return true;
-    return false;
+  // ---------------------------------------------------------------------------
+  // SQLite access — batch all queries into a single sql.js subprocess call
+  // ---------------------------------------------------------------------------
+
+  private queryDb(dbPath: string, projectPath: string): Array<{
+    sessionId: string;
+    sessionDir: string;
+    timeCreated: number;
+    messagesJson: string;
+  }> | null {
+    const sqlJsPath = this.getSqlJsEntryPath();
+    if (!sqlJsPath) return null;
+
+    // One subprocess: load the DB, fetch sessions + their messages with diffs,
+    // return a JSON array of { sessionId, sessionDir, timeCreated, messagesJson }.
+    const script = `
+const initSqlJs = require(process.env.SQLJS_MODULE_PATH);
+const fs = require('fs');
+const pathMod = require('path');
+
+const dbPath = process.env.OC_DB_PATH;
+const projectPath = process.env.OC_PROJECT_PATH;
+
+initSqlJs({ locateFile: file => pathMod.join(pathMod.dirname(process.env.SQLJS_MODULE_PATH), file) })
+  .then(SQL => {
+    const data = fs.readFileSync(dbPath);
+    const db = new SQL.Database(data);
+
+    // Fetch all sessions that recorded at least some activity
+    const sessRes = db.exec(
+      "SELECT id, directory, time_created FROM session WHERE summary_additions > 0 OR summary_deletions > 0 OR summary_files > 0"
+    );
+
+    const sessions = sessRes && sessRes[0] ? sessRes[0].values : [];
+    const results = [];
+
+    for (const [sessionId, sessionDir, timeCreated] of sessions) {
+      // Fetch messages that carry diffs for this session
+      const msgRes = db.exec(
+        "SELECT data FROM message WHERE session_id='" + sessionId.replace(/'/g, "''") +
+        "' AND json_array_length(json_extract(data, '$.summary.diffs')) > 0"
+      );
+      const msgRows = msgRes && msgRes[0] ? msgRes[0].values : [];
+      if (msgRows.length === 0) continue;
+
+      const messages = msgRows.map(r => {
+        try { return JSON.parse(r[0]); } catch { return null; }
+      }).filter(Boolean);
+
+      if (messages.length === 0) continue;
+
+      results.push({ sessionId, sessionDir, timeCreated, messagesJson: JSON.stringify(messages) });
+    }
+
+    process.stdout.write(JSON.stringify(results));
+  })
+  .catch(e => { process.stderr.write(String(e)); process.exit(1); });
+`;
+
+    try {
+      const result = spawnSync(process.execPath, ['-e', script], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          OC_DB_PATH: dbPath,
+          OC_PROJECT_PATH: projectPath,
+          SQLJS_MODULE_PATH: sqlJsPath,
+        },
+        maxBuffer: 1024 * 1024 * 64,
+      });
+
+      if (result.error || result.status !== 0) return null;
+
+      const output = result.stdout?.toString() ?? '';
+      if (!output) return null;
+
+      return JSON.parse(output);
+    } catch {
+      return null;
+    }
   }
 
-  /**
-   * Parse a diff object to extract file change
-   */
+  private getSqlJsEntryPath(): string | null {
+    try {
+      return this.nodeRequire.resolve('sql.js');
+    } catch {
+      return null;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Diff parsing
+  // ---------------------------------------------------------------------------
+
   private parseDiff(diff: any, projectPath: string, timestamp: Date, model?: string): FileChange | null {
-    if (!diff || !diff.file) return null;
+    if (!diff?.file) return null;
 
     const filePath = this.normalizePath(diff.file, projectPath);
-    const beforeContent = diff.before || '';
-    const afterContent = diff.after || '';
+    const status: string = diff.status ?? 'modified';
 
-    const changeType = (!beforeContent && afterContent) ? 'create' 
-      : (beforeContent && !afterContent) ? 'delete' 
-      : 'modify';
+    const changeType: FileChange['changeType'] =
+      status === 'added' ? 'create' :
+      status === 'deleted' ? 'delete' :
+      'modify';
 
-    // Use opencode's provided diff stats if available (most accurate)
-    // additions/deletions are pre-calculated by opencode
-    const diffStats = this.diffLineCounts(beforeContent, afterContent);
-    const addedLines = this.diffAddedLines(beforeContent, afterContent);
-    const linesAdded = typeof diff.additions === 'number' ? diff.additions : diffStats.added;
-    const linesRemoved = typeof diff.deletions === 'number' ? diff.deletions : diffStats.removed;
+    const linesAdded: number = typeof diff.additions === 'number' ? diff.additions : 0;
+    const linesRemoved: number = typeof diff.deletions === 'number' ? diff.deletions : 0;
+
+    // Extract added lines from the unified patch for content verification
+    const addedLines = this.extractAddedLinesFromDiff(diff.patch);
 
     return {
       filePath,
@@ -191,48 +232,30 @@ export class OpencodeScanner extends BaseScanner {
       timestamp,
       tool: this.tool,
       model,
-      content: afterContent,
-      addedLines,
+      addedLines: addedLines.length > 0 ? addedLines : undefined,
     };
   }
 
-  /**
-   * Parse message data for file changes
-   */
-  private parseMessageChanges(msgData: any, projectPath: string, model?: string): FileChange[] {
-    const changes: FileChange[] = [];
-    const timestamp = msgData.time?.created
-      ? new Date(msgData.time.created)
-      : new Date();
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
 
-    const diffs = msgData.summary?.diffs;
-    if (diffs && Array.isArray(diffs)) {
-      for (const diff of diffs) {
-        const change = this.parseDiff(diff, projectPath, timestamp, model);
-        if (change) {
-          changes.push(change);
-        }
-      }
-    }
-
-    return changes;
+  private pathsMatch(sessionDir: string, projectPath: string): boolean {
+    const s = this.toForwardSlash(path.resolve(sessionDir));
+    const p = this.toForwardSlash(projectPath);
+    return s === p || s.startsWith(p + '/') || p.startsWith(s + '/');
   }
 
-  /**
-   * Remove duplicate file changes
-   */
   private deduplicateChanges(changes: FileChange[]): FileChange[] {
     const seen = new Set<string>();
     const unique: FileChange[] = [];
-
-    for (const change of changes) {
-      const key = `${change.filePath}-${change.linesAdded}-${change.linesRemoved}-${change.timestamp.getTime()}`;
+    for (const c of changes) {
+      const key = `${c.filePath}|${c.linesAdded}|${c.linesRemoved}|${c.timestamp.getTime()}`;
       if (!seen.has(key)) {
         seen.add(key);
-        unique.push(change);
+        unique.push(c);
       }
     }
-
     return unique;
   }
 }
